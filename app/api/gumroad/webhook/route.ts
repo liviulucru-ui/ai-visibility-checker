@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { processAudit } from '@/lib/audits/processor'
 
 export const runtime = 'nodejs'
@@ -138,15 +138,18 @@ export async function POST(request: Request) {
     }).eq('id', auditId).in('status', ['queued', 'processing'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
 
-    // Payment verification is durable before processing begins. Any provider,
-    // PDF, or email failure must not roll back the verified payment state.
-    try {
-      await processAudit(auditId)
-    } catch (processingError) {
-      console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
-      await supabase.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
-    }
-    return NextResponse.json({ received: true, processed: true })
+    // Payment verification is durable before processing begins. Schedule the
+    // existing processor after the response; provider failures never roll back
+    // the verified payment state.
+    after(async () => {
+      try {
+        await processAudit(auditId)
+      } catch (processingError) {
+        console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
+        await supabase.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
+      }
+    })
+    return NextResponse.json({ received: true, processingScheduled: true })
   } catch (error) {
     console.error('[v0] Gumroad verification failed', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Payment service is temporarily unavailable.' }, { status: 503 })
