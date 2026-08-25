@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
-import { after, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { processAudit } from '@/lib/audits/processor'
+import { waitUntil } from '@vercel/functions'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const GUMROAD_SELLER_ID = '_awS5EayMAyhC6mFIDzEvw=='
 
@@ -141,15 +143,15 @@ export async function POST(request: Request) {
     // Payment verification is durable before processing begins. Schedule the
     // existing processor after the response; provider failures never roll back
     // the verified payment state.
-    after(async () => {
+    waitUntil((async () => {
       try {
         await processAudit(auditId)
       } catch (processingError) {
         console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
         await supabase.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
       }
-    })
-    return NextResponse.json({ received: true, processingScheduled: true })
+    })())
+    return NextResponse.json({ received: true, processing_started: true })
   } catch (error) {
     console.error('[v0] Gumroad verification failed', error instanceof Error ? error.message : 'unknown')
     return NextResponse.json({ error: 'Payment service is temporarily unavailable.' }, { status: 503 })
