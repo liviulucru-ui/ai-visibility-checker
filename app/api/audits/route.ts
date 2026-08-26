@@ -78,16 +78,16 @@ function geminiDiagnostic(error: unknown) {
     statusText: candidate.statusText ?? null,
     providerCode: providerCode ?? null,
     providerMessage: providerMessage.slice(0, 500),
-    model: 'gemini-3.6-flash',
+    model: 'gemini-1.5-flash',
   }
 }
 
 async function interpretEvidence(evidence: unknown): Promise<Interpretation | null> {
-  const key = process.env.GEMINI_API_KEY_2
-  if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY_2 is unavailable to the running server process.')
+  const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
+  if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
   try {
     const response = await generateText({
-      model: createGoogleGenerativeAI({ apiKey: key })('gemini-3.6-flash'),
+      model: createGoogleGenerativeAI({ apiKey: key })('gemini-1.5-flash'),
       temperature: 0,
       maxOutputTokens: 2400,
       prompt: `Interpret only the factual search evidence below. Do not invent entities, facts, competitors, citations, scores, or results. If evidence is absent, say so. Return JSON only with exactly these keys: summary (string), key_findings (string[]), competitor_observations (string[]), brand_accuracy_observations (string[]), opportunities (string[]), prioritized_actions (string[]).\n\nEVIDENCE:\n${JSON.stringify(evidence)}`,
@@ -175,7 +175,7 @@ export async function GET(request: Request) {
   if (!id || !token) return NextResponse.json({ error: 'Missing audit authorization.' }, { status: 400 })
   try {
     const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await adminClient().from('audits').select('id,status,score,findings,created_at').eq('id', id).eq('access_token_hash', hash).maybeSingle()
+    const { data, error } = await adminClient().from('audits').select('id,status,score,findings,created_at').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
     return NextResponse.json(data)
   } catch { return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }
