@@ -51,12 +51,28 @@ function scoreAudit(queries: Array<{ results: Array<{ title?: string; link?: str
 }
 
 const interpretationSchema = z.object({
-  summary: z.string().min(1).max(1200),
-  key_findings: z.array(z.string().min(1).max(500)).max(8),
-  competitor_observations: z.array(z.string().min(1).max(500)).max(8),
-  brand_accuracy_observations: z.array(z.string().min(1).max(500)).max(8),
-  opportunities: z.array(z.string().min(1).max(500)).max(8),
-  prioritized_actions: z.array(z.string().min(1).max(500)).max(8),
+  visibility_score: z.number().min(0).max(100),
+  summary: z.string(),
+  brand_presence: z.enum(["High", "Medium", "Low", "Not Found"]),
+  top_competitors: z.array(
+    z.object({
+      name: z.string(),
+      domain: z.string(),
+      strengths: z.string()
+    })
+  ),
+  ai_readiness_breakdown: z.object({
+    chatgpt_visibility: z.string(),
+    perplexity_search_rank: z.string(),
+    google_gemini_presence: z.string()
+  }),
+  actionable_recommendations: z.array(
+    z.object({
+      priority: z.enum(["High", "Medium"]),
+      action: z.string(),
+      impact: z.string()
+    })
+  )
 })
 
 type Interpretation = z.infer<typeof interpretationSchema>
@@ -78,19 +94,34 @@ function geminiDiagnostic(error: unknown) {
     statusText: candidate.statusText ?? null,
     providerCode: providerCode ?? null,
     providerMessage: providerMessage.slice(0, 500),
-    model: 'gemini-3.6-flash',
+    model: 'gemini-1.5-flash',
   }
 }
 
 async function interpretEvidence(evidence: unknown): Promise<Interpretation | null> {
-  const key = process.env.GEMINI_API_KEY_2
-  if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY_2 is unavailable to the running server process.')
+  const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
+  if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
   try {
     const response = await generateText({
-      model: createGoogleGenerativeAI({ apiKey: key })('gemini-3.6-flash'),
+      model: createGoogleGenerativeAI({ apiKey: key })('gemini-1.5-flash'),
       temperature: 0,
       maxOutputTokens: 2400,
-      prompt: `Interpret only the factual search evidence below. Do not invent entities, facts, competitors, citations, scores, or results. If evidence is absent, say so. Return JSON only with exactly these keys: summary (string), key_findings (string[]), competitor_observations (string[]), brand_accuracy_observations (string[]), opportunities (string[]), prioritized_actions (string[]).\n\nEVIDENCE:\n${JSON.stringify(evidence)}`,
+      prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+Do not invent information. Follow this JSON schema exactly:
+{
+  "visibility_score": number (0-100),
+  "summary": string,
+  "brand_presence": "High" | "Medium" | "Low" | "Not Found",
+  "top_competitors": [{"name": string, "domain": string, "strengths": string}],
+  "ai_readiness_breakdown": {
+    "chatgpt_visibility": string,
+    "perplexity_search_rank": string,
+    "google_gemini_presence": string
+  },
+  "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
+}
+
+EVIDENCE:\n${JSON.stringify(evidence)}`,
     })
     const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
     return interpretationSchema.parse(JSON.parse(clean))
@@ -123,7 +154,13 @@ export async function POST(request: Request) {
     if (!key) throw new Error('SerpApi is not configured on the server. SERPAPI_KEY is unavailable to the running server process.')
     const queryResults: Array<{ query: string; results: Array<{ title?: string; link?: string; snippet?: string }>; unavailable?: boolean; provider_error?: string }> = []
     let providerFailure = ''
-    for (const query of queriesFor(category, location, mainService)) {
+    const generatedQueries = [...new Set([
+      `"${businessName}" ${category}`,
+      `best ${category} ${mainService || 'apps / platforms'} in ${country || location}`,
+      `top ${category} ${country || location}`
+    ].filter(Boolean))] as string[]
+
+    for (const query of generatedQueries) {
       let response: Response
       let data: Record<string, unknown>
       try {
@@ -172,10 +209,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ configured: Boolean(key), keyLength: key?.length ?? 0 })
   }
   const id = params.get('id'); const token = params.get('token')
-  if (!id || !token) return NextResponse.json({ error: 'Missing audit authorization.' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'Missing audit ID.' }, { status: 400 })
+
   try {
+    const db = adminClient()
+    if (!token) {
+      const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['ready', 'completed']).maybeSingle()
+      if (error || !data) return NextResponse.json({ error: 'Audit not found or requires authorization.' }, { status: 404 })
+      return NextResponse.json(data)
+    }
+
     const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await adminClient().from('audits').select('id,status,score,findings,created_at').eq('id', id).eq('access_token_hash', hash).maybeSingle()
+    const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
     return NextResponse.json(data)
   } catch { return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }

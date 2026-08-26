@@ -4,12 +4,28 @@ import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 const schema = z.object({
-  summary: z.string().min(1).max(1200),
-  key_findings: z.array(z.string().min(1).max(500)).max(8),
-  competitor_observations: z.array(z.string().min(1).max(500)).max(8),
-  brand_accuracy_observations: z.array(z.string().min(1).max(500)).max(8),
-  opportunities: z.array(z.string().min(1).max(500)).max(8),
-  prioritized_actions: z.array(z.string().min(1).max(500)).max(8),
+  visibility_score: z.number().min(0).max(100),
+  summary: z.string(),
+  brand_presence: z.enum(["High", "Medium", "Low", "Not Found"]),
+  top_competitors: z.array(
+    z.object({
+      name: z.string(),
+      domain: z.string(),
+      strengths: z.string()
+    })
+  ),
+  ai_readiness_breakdown: z.object({
+    chatgpt_visibility: z.string(),
+    perplexity_search_rank: z.string(),
+    google_gemini_presence: z.string()
+  }),
+  actionable_recommendations: z.array(
+    z.object({
+      priority: z.enum(["High", "Medium"]),
+      action: z.string(),
+      impact: z.string()
+    })
+  )
 })
 
 function adminClient() {
@@ -19,8 +35,12 @@ function adminClient() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
-function queries(category: string, location: string, service: string) {
-  return [...new Set([`best ${category || 'business'} in ${location}`, `top ${category || 'business'} in ${location}`, `recommended ${category || 'business'} in ${location}`, service && `best ${service} in ${location}`, `best ${category || 'business'} near ${location}`, `top-rated ${category || 'business'} in ${location}`, `where to find ${category || 'business'} in ${location}`, `${category || 'business'} companies ${location}`].filter(Boolean))] as string[]
+function queries(businessName: string, category: string, location: string, service: string, country: string) {
+  return [...new Set([
+    `"${businessName}" ${category}`,
+    `best ${category} ${service || 'apps / platforms'} in ${country || location}`,
+    `top ${category} ${country || location}`
+  ].filter(Boolean))] as string[]
 }
 
 function score(items: Array<{ results: Array<{ title?: string; link?: string; snippet?: string }> }>, business: string, website: string) {
@@ -47,7 +67,7 @@ export async function processAudit(auditId: string) {
   const key = process.env.SERPAPI_KEY_2
   if (!key) throw new Error('SerpApi is not configured on the server.')
   const queryResults: Array<{ query: string; results: Array<{ title?: string; link?: string; snippet?: string }>; unavailable?: boolean; provider_error?: string }> = []
-  for (const query of queries(audit.category, audit.location, audit.main_service ?? '')) {
+  for (const query of queries(audit.business_name, audit.category, audit.location, audit.main_service ?? '', audit.country)) {
     try {
       const response = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${encodeURIComponent(key)}`, { cache: 'no-store', signal: AbortSignal.timeout(15000) })
       const data = await response.json().catch(() => ({})) as Record<string, unknown>
@@ -60,7 +80,25 @@ export async function processAudit(auditId: string) {
   const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
     try {
-      const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })('gemini-1.5-flash'), temperature: 0, maxOutputTokens: 2400, prompt: `Interpret only this factual search evidence. Return JSON with exactly summary, key_findings, competitor_observations, brand_accuracy_observations, opportunities, prioritized_actions. Evidence:\n${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}` })
+      const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+Do not invent information. Follow this JSON schema exactly:
+{
+  "visibility_score": number (0-100),
+  "summary": string,
+  "brand_presence": "High" | "Medium" | "Low" | "Not Found",
+  "top_competitors": [{"name": string, "domain": string, "strengths": string}],
+  "ai_readiness_breakdown": {
+    "chatgpt_visibility": string,
+    "perplexity_search_rank": string,
+    "google_gemini_presence": string
+  },
+  "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
+}
+
+Evidence:
+${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}`
+
+      const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })('gemini-1.5-flash'), temperature: 0, maxOutputTokens: 2400, prompt })
       interpretation = schema.parse(JSON.parse(response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')))
     } catch (error) { console.error('[v0] paid Gemini interpretation unavailable', error instanceof Error ? error.message : 'unknown') }
   }
