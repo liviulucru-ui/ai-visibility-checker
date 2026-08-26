@@ -79,41 +79,54 @@ async function verifySale(saleId: string) {
 }
 
 export async function POST(request: Request) {
-  const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
-  if (!contentType.includes('application/x-www-form-urlencoded')) {
-    return diagnostic(request, new URLSearchParams(), 'invalid_content_type')
-  }
-
-  const form = new URLSearchParams(await request.text())
-  const sellerId = clean(form.get('seller_id'))
-  const saleId = clean(form.get('sale_id'))
-  const resourceName = clean(form.get('resource_name') || form.get('resource')).toLowerCase()
-  const isTestNotification = form.get('test')?.trim().toLowerCase() === 'true'
-
-  // Reject arbitrary POSTs and malformed notifications before any privileged
-  // work. Gumroad includes seller_id on its Ping payloads.
-  if (sellerId !== GUMROAD_SELLER_ID) {
-    return diagnostic(request, form, 'invalid_seller_id')
-  }
-
-  // Gumroad's dashboard test sends the most recent sale as form data and sets
-  // test=true, so it may contain sale_id and real sale fields. A valid test
-  // notification is acknowledged without payment verification or side effects.
-  if (isTestNotification) {
-    return NextResponse.json({ received: true, test: true }, { status: 200 })
-  }
-
-  // Only sale notifications can begin fulfillment. Other authenticated Ping
-  // resources are acknowledged safely but never unlock or create a report.
-  if (resourceName && resourceName !== 'sale') {
-    return NextResponse.json({ received: true, ignored: true }, { status: 200 })
-  }
-
-  if (!saleId) {
-    return diagnostic(request, form, 'missing_sale_id')
-  }
-
   try {
+    const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
+    let form: URLSearchParams
+
+    if (contentType.includes('application/json')) {
+      const json = await request.json().catch(() => ({}))
+      form = new URLSearchParams(Object.entries(json))
+    } else if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData().catch(() => null)
+      form = new URLSearchParams()
+      if (formData) {
+        for (const [key, value] of formData.entries()) {
+          form.set(key, value.toString())
+        }
+      }
+    } else {
+      const text = await request.text().catch(() => '')
+      form = new URLSearchParams(text)
+    }
+
+    const sellerId = clean(form.get('seller_id'))
+    const saleId = clean(form.get('sale_id'))
+    const resourceName = clean(form.get('resource_name') || form.get('resource')).toLowerCase()
+    const isTestNotification = form.get('test')?.trim().toLowerCase() === 'true'
+
+    // Reject arbitrary POSTs and malformed notifications before any privileged
+    // work. Gumroad includes seller_id on its Ping payloads.
+    if (sellerId !== GUMROAD_SELLER_ID) {
+      return diagnostic(request, form, 'invalid_seller_id')
+    }
+
+    // Gumroad's dashboard test sends the most recent sale as form data and sets
+    // test=true, so it may contain sale_id and real sale fields. A valid test
+    // notification is acknowledged without payment verification or side effects.
+    if (isTestNotification) {
+      return NextResponse.json({ received: true, test: true }, { status: 200 })
+    }
+
+    // Only sale notifications can begin fulfillment. Other authenticated Ping
+    // resources are acknowledged safely but never unlock or create a report.
+    if (resourceName && resourceName !== 'sale') {
+      return NextResponse.json({ received: true, ignored: true }, { status: 200 })
+    }
+
+    if (!saleId) {
+      return diagnostic(request, form, 'missing_sale_id')
+    }
+
     const verification = await verifySale(saleId)
     if (verification.unavailable) return NextResponse.json({ error: 'Payment verification is not configured.' }, { status: 503 })
     if (!verification.ok) return diagnostic(request, form, 'sale_verification_failed')
@@ -135,9 +148,9 @@ export async function POST(request: Request) {
     const { error } = await supabase.from('audits').update({
       gumroad_sale_id: saleId,
       payment_verified_at: now,
-      status: 'payment_verified',
+      status: 'processing',
       updated_at: now,
-    }).eq('id', auditId).in('status', ['queued', 'processing'])
+    }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
 
     // Payment verification is durable before processing begins. Schedule the
@@ -152,10 +165,10 @@ export async function POST(request: Request) {
         await supabase.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
       }
     })())
-    return NextResponse.json({ received: true, processing_started: true })
+    return NextResponse.json({ received: true, processing_started: true }, { status: 200 })
   } catch (error) {
-    console.error('[v0] Gumroad verification failed', error instanceof Error ? error.message : 'unknown')
-    return NextResponse.json({ error: 'Payment service is temporarily unavailable.' }, { status: 503 })
+    console.error('[Gumroad Webhook Parse Error]', error)
+    return NextResponse.json({ received: true, error: 'parse_failed' }, { status: 200 })
   }
 }
 

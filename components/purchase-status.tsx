@@ -8,6 +8,7 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
 
   useEffect(() => {
     let active = true
+    let retries = 0
     const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('pending_audit_id') || '' : '')
 
     const poll = async () => {
@@ -17,18 +18,40 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
         if (saleId) params.set('sale_id', saleId)
 
         const response = await fetch(`/api/gumroad/status?${params.toString()}`, { cache: 'no-store' })
+
+        if (!response.ok && response.status >= 500) {
+          retries += 1
+          if (retries >= 10 && active) {
+            setError('We are unable to confirm your purchase status at this time.')
+            return
+          }
+        } else {
+          retries = 0
+        }
+
         const result = await response.json()
         if (!active) return
         if (!response.ok) { setError(result.error ?? 'We could not find this purchase session.'); return }
+
         setStatus(result.status)
-        if (result.reportReady && result.reportUrl) {
+        if (result.ready || result.status === 'ready') {
           if (localAuditId) {
             try { localStorage.removeItem('pending_audit_id') } catch {}
           }
-          window.location.assign(result.reportUrl)
+          if (result.reportUrl) {
+            window.location.assign(result.reportUrl)
+          } else {
+            window.location.assign(`/results/${result.auditId || localAuditId}`)
+          }
           return
         }
-      } catch { if (active) setError('Payment status is temporarily unavailable.') }
+      } catch {
+        retries += 1
+        if (retries >= 10 && active) {
+          setError('Payment status is temporarily unavailable.')
+          return
+        }
+      }
       if (active) window.setTimeout(poll, 3000)
     }
     void poll()

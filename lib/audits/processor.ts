@@ -35,14 +35,15 @@ function score(items: Array<{ results: Array<{ title?: string; link?: string; sn
 }
 
 export async function processAudit(auditId: string) {
-  const db = adminClient()
-  const { data: audit, error } = await db.from('audits').select('*').eq('id', auditId).maybeSingle()
-  if (error || !audit) throw new Error('Audit not found.')
-  if (audit.status === 'ready') return { status: 'ready' as const, skipped: true }
-  if (audit.status === 'processing') return { status: 'processing' as const, skipped: true }
-  const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).eq('status', 'payment_verified')
-  if (claimError) throw claimError
-  if (claimed !== 1) return { status: 'processing' as const, skipped: true }
+  try {
+    const db = adminClient()
+    const { data: audit, error } = await db.from('audits').select('*').eq('id', auditId).maybeSingle()
+    if (error || !audit) throw new Error('Audit not found.')
+    if (audit.status === 'ready' || audit.status === 'completed' || audit.findings !== null) return { status: 'ready' as const, skipped: true }
+
+    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
+    if (claimError) throw claimError
+    if (claimed !== 1) return { status: 'processing' as const, skipped: true }
   const key = process.env.SERPAPI_KEY_2
   if (!key) throw new Error('SerpApi is not configured on the server.')
   const queryResults: Array<{ query: string; results: Array<{ title?: string; link?: string; snippet?: string }>; unavailable?: boolean; provider_error?: string }> = []
@@ -64,8 +65,12 @@ export async function processAudit(auditId: string) {
     } catch (error) { console.error('[v0] paid Gemini interpretation unavailable', error instanceof Error ? error.message : 'unknown') }
   }
   const findings = { business_name: audit.business_name, website_url: audit.website_url, location: audit.location, country: audit.country, main_service: audit.main_service, queries_analyzed: queryResults.length, raw_search_evidence: queryResults, query_results: queryResults, deterministic_score_inputs: { valid_queries: queryResults.filter((q) => q.results.length).length, mentions_weight: 55, top_result_weight: 25, citations_weight: 20 }, ai_interpretation: interpretation, ai_interpretation_status: interpretation ? 'available' : 'unavailable' }
-  const finalScore = score(queryResults, audit.business_name, audit.website_url)
-  const { error: updateError } = await db.from('audits').update({ status: 'ready', score: finalScore, findings, updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
-  if (updateError) throw updateError
-  return { status: 'ready' as const, skipped: false }
+    const finalScore = score(queryResults, audit.business_name, audit.website_url)
+    const { error: updateError } = await db.from('audits').update({ status: 'ready', score: finalScore, findings, updated_at: new Date().toISOString() }).eq('id', auditId)
+    if (updateError) throw updateError
+    return { status: 'ready' as const, skipped: false }
+  } catch (err) {
+    console.error('[Full Audit Generation Error]', err)
+    throw err
+  }
 }
