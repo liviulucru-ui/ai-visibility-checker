@@ -22,6 +22,9 @@ export function PurchaseForm() {
       setLoading(false)
       return
     }
+    if (result.auditId) {
+      try { localStorage.setItem('pending_audit_id', result.auditId) } catch {}
+    }
     window.location.assign(result.checkoutUrl)
   }
 

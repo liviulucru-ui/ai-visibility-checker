@@ -13,14 +13,36 @@ function db() {
 }
 
 export async function GET(request: Request) {
-  const id = new URL(request.url).searchParams.get('audit_id')
+  const searchParams = new URL(request.url).searchParams
+  const auditId = searchParams.get('audit_id')
+  const saleId = searchParams.get('sale_id')
   const cookie = (await cookies()).get('purchase_access')?.value
   const [cookieId, token] = cookie?.split(':') ?? []
-  if (!id || id !== cookieId || !token) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
+
+  const targetId = auditId || cookieId
+  if (!targetId || !token) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
+
   try {
     const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await db().from('audits').select('id,status,score,findings').eq('id', id).eq('report_access_token_hash', hash).maybeSingle()
+
+    let query = db().from('audits').select('id,status,score,findings').eq('report_access_token_hash', hash)
+    if (saleId && targetId) {
+       query = query.or(`id.eq.${targetId},gumroad_sale_id.eq.${saleId}`)
+    } else if (targetId) {
+       query = query.eq('id', targetId)
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
-    return NextResponse.json({ id: data.id, status: data.status, score: data.score, reportReady: data.status === 'ready', reportUrl: data.status === 'ready' ? `/results/${data.id}?token=${encodeURIComponent(token)}` : null })
+
+    return NextResponse.json({
+      id: data.id,
+      auditId: data.id,
+      status: data.status,
+      score: data.score,
+      ready: data.status === 'ready',
+      reportReady: data.status === 'ready',
+      reportUrl: data.status === 'ready' ? `/results/${data.id}?token=${encodeURIComponent(token)}` : null
+    })
   } catch { return NextResponse.json({ error: 'Payment status is temporarily unavailable.' }, { status: 503 }) }
 }
