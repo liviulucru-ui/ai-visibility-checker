@@ -100,7 +100,7 @@ export default function ResultsPage() {
           <h3 className="font-semibold relative z-20 text-xl">Unlock the Full Action Plan</h3>
           <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto relative z-20">Get the complete AI Readiness Breakdown (ChatGPT & Perplexity metrics) and a step-by-step checklist of actionable recommendations to dominate your niche.</p>
           <div className="mt-6 relative z-20 flex justify-center">
-            <CTA href="/buy">Unlock Full $19 Audit</CTA>
+            <CTA href={`https://aibrandcheck.gumroad.com/l/wgudko?audit_id=${params.id}&wanted=true`}>Get Full Report — $19 →</CTA>
           </div>
 
           <div className="opacity-20 mt-8 space-y-4 blur-[2px]">

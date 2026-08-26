@@ -54,8 +54,8 @@ export async function GET(req: Request) {
       }, { status: 200 });
     }
 
-    // Self-healing: if stuck in queued or processing with no findings, trigger generation
-    if ((audit.status === 'queued' || audit.status === 'processing' || audit.status === 'payment_verified') && !audit.findings) {
+    // Self-healing: if stuck in queued or payment_verified with no findings, trigger generation
+    if ((audit.status === 'queued' || audit.status === 'payment_verified') && !audit.findings) {
       const { processAudit } = await import('@/lib/audits/processor');
       const { waitUntil } = await import('@vercel/functions');
 
