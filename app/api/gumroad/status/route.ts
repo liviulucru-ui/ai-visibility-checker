@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const [cookieId, token] = cookie?.split(':') ?? []
 
     const targetId = auditId || cookieId
-    if (!targetId || !token) return NextResponse.json({ success: false, status: 'not_found', error: 'Purchase session not found.' }, { status: 404 })
+    if (!targetId || !token) return NextResponse.json({ success: false, status: 'not_found', ready: false }, { status: 200 })
 
     const hash = createHash('sha256').update(token).digest('hex')
 
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     }
 
     const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle()
-    if (error || !data) return NextResponse.json({ success: false, status: 'not_found', error: 'Purchase session not found.' }, { status: 404 })
+    if (error || !data) return NextResponse.json({ success: false, status: 'not_found', ready: false }, { status: 200 })
 
     if (data.status === 'payment_verified') {
       waitUntil((async () => {
@@ -47,29 +47,33 @@ export async function GET(request: Request) {
       })())
       return NextResponse.json({
         success: true,
-        id: data.id,
-        auditId: data.id,
         status: 'processing',
-        score: data.score,
+        auditId: data.id,
         ready: false,
-        reportReady: false,
         reportUrl: null
       }, { status: 200 })
     }
 
     const isReady = data.status === 'ready' || data.status === 'completed'
+    if (isReady) {
+      return NextResponse.json({
+        success: true,
+        status: 'ready',
+        auditId: data.id,
+        ready: true,
+        report: data.findings || null,
+        reportUrl: `/results/${data.id}?token=${encodeURIComponent(token)}`
+      }, { status: 200 })
+    }
+
     return NextResponse.json({
       success: true,
-      id: data.id,
+      status: 'processing',
       auditId: data.id,
-      status: data.status || 'pending',
-      score: data.score,
-      ready: isReady,
-      reportReady: isReady,
-      reportUrl: isReady ? `/results/${data.id}?token=${encodeURIComponent(token)}` : null
+      ready: false
     }, { status: 200 })
   } catch (err) {
     console.error('[Gumroad Status Error]', err)
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 })
+    return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 })
   }
 }
