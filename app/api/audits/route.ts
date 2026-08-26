@@ -172,10 +172,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ configured: Boolean(key), keyLength: key?.length ?? 0 })
   }
   const id = params.get('id'); const token = params.get('token')
-  if (!id || !token) return NextResponse.json({ error: 'Missing audit authorization.' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'Missing audit ID.' }, { status: 400 })
+
   try {
+    const db = adminClient()
+    if (!token) {
+      const { data, error } = await db.from('audits').select('id,status,score,findings,created_at').eq('id', id).in('status', ['ready', 'completed']).maybeSingle()
+      if (error || !data) return NextResponse.json({ error: 'Audit not found or requires authorization.' }, { status: 404 })
+      return NextResponse.json(data)
+    }
+
     const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await adminClient().from('audits').select('id,status,score,findings,created_at').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
+    const { data, error } = await db.from('audits').select('id,status,score,findings,created_at').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
     return NextResponse.json(data)
   } catch { return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }

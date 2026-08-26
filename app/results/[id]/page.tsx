@@ -18,12 +18,12 @@ export default function ResultsPage() {
 
   useEffect(() => {
     const token = searchParams.get('token')
-    if (!token) { setError('This result link is missing its private access token.'); return }
     let active = true
     let timer: number | undefined
     const poll = async () => {
       try {
-        const response = await fetch(`/api/audits?id=${encodeURIComponent(params.id)}&token=${encodeURIComponent(token)}`, { cache: 'no-store' })
+        const fetchUrl = token ? `/api/audits?id=${encodeURIComponent(params.id)}&token=${encodeURIComponent(token)}` : `/api/audits?id=${encodeURIComponent(params.id)}`
+        const response = await fetch(fetchUrl, { cache: 'no-store' })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || 'Results are unavailable.')
         if (!active) return
