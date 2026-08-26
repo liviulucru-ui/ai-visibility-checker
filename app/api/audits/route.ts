@@ -101,12 +101,17 @@ function geminiDiagnostic(error: unknown) {
 async function interpretEvidence(evidence: unknown): Promise<Interpretation | null> {
   const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
-  try {
-    const response = await generateText({
-      model: createGoogleGenerativeAI({ apiKey: key })('gemini-1.5-flash'),
-      temperature: 0,
-      maxOutputTokens: 2400,
-      prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+  let lastError: unknown
+
+  for (const modelName of models) {
+    try {
+      const response = await generateText({
+        model: createGoogleGenerativeAI({ apiKey: key })(modelName),
+        temperature: 0,
+        maxOutputTokens: 2400,
+        prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
 Do not invent information. Follow this JSON schema exactly:
 {
   "visibility_score": number (0-100),
@@ -122,14 +127,17 @@ Do not invent information. Follow this JSON schema exactly:
 }
 
 EVIDENCE:\n${JSON.stringify(evidence)}`,
-    })
-    const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-    return interpretationSchema.parse(JSON.parse(clean))
-  } catch (error) {
-    const diagnostic = geminiDiagnostic(error)
-    console.error('[v0] Gemini interpretation unavailable', diagnostic)
-    return null
+      })
+      const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+      return interpretationSchema.parse(JSON.parse(clean))
+    } catch (error) {
+      lastError = error
+      console.warn(`[v0] Gemini interpretation failed for model ${modelName}`, geminiDiagnostic(error))
+    }
   }
+
+  console.error('[v0] Gemini interpretation unavailable after all retries', geminiDiagnostic(lastError))
+  return null
 }
 
 export async function POST(request: Request) {

@@ -79,8 +79,10 @@ export async function processAudit(auditId: string) {
   let interpretation: z.infer<typeof schema> | null = null
   const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
-    try {
-      const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+    for (const modelName of models) {
+      try {
+        const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
 Do not invent information. Follow this JSON schema exactly:
 {
   "visibility_score": number (0-100),
@@ -98,9 +100,16 @@ Do not invent information. Follow this JSON schema exactly:
 Evidence:
 ${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}`
 
-      const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })('gemini-1.5-flash'), temperature: 0, maxOutputTokens: 2400, prompt })
-      interpretation = schema.parse(JSON.parse(response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')))
-    } catch (error) { console.error('[v0] paid Gemini interpretation unavailable', error instanceof Error ? error.message : 'unknown') }
+        const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })(modelName), temperature: 0, maxOutputTokens: 2400, prompt })
+        interpretation = schema.parse(JSON.parse(response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')))
+        break
+      } catch (error) {
+        console.warn(`[v0] paid Gemini interpretation failed for model ${modelName}`, error instanceof Error ? error.message : 'unknown')
+      }
+    }
+    if (!interpretation) {
+      console.error('[v0] paid Gemini interpretation unavailable after all retries')
+    }
   }
   const findings = { business_name: audit.business_name, website_url: audit.website_url, location: audit.location, country: audit.country, main_service: audit.main_service, queries_analyzed: queryResults.length, raw_search_evidence: queryResults, query_results: queryResults, deterministic_score_inputs: { valid_queries: queryResults.filter((q) => q.results.length).length, mentions_weight: 55, top_result_weight: 25, citations_weight: 20 }, ai_interpretation: interpretation, ai_interpretation_status: interpretation ? 'available' : 'unavailable' }
     const finalScore = score(queryResults, audit.business_name, audit.website_url)
