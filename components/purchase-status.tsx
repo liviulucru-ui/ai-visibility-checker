@@ -5,11 +5,16 @@ import { useEffect, useState } from 'react'
 export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: string }) {
   const [status, setStatus] = useState('verifying')
   const [error, setError] = useState('')
+  const [showFallbackButton, setShowFallbackButton] = useState(false)
+  const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('pending_audit_id') || '' : '')
 
   useEffect(() => {
     let active = true
+    const timeoutTimer = setTimeout(() => {
+      if (active) setShowFallbackButton(true)
+    }, 8000)
+
     let retries = 0
-    const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('pending_audit_id') || '' : '')
 
     const poll = async () => {
       try {
@@ -55,8 +60,11 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
       if (active) window.setTimeout(poll, 3000)
     }
     void poll()
-    return () => { active = false }
-  }, [auditId, saleId])
+    return () => {
+      active = false
+      clearTimeout(timeoutTimer)
+    }
+  }, [auditId, saleId, localAuditId])
 
   const isProcessing = status === 'payment_verified' || status === 'processing'
 
@@ -69,7 +77,16 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
       <p className="mt-5 max-w-xl text-pretty leading-7 text-muted-foreground">
         {error || (status === 'ready' ? 'Your report is ready. Opening it now…' : isProcessing ? 'Payment confirmed. AI is generating your detailed audit...' : 'Gumroad has returned you to the app. We are waiting for secure server-side verification and processing. You can leave this tab open.')}
       </p>
-      {error ? <button className="mt-8 w-fit rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" onClick={() => window.location.reload()}>Check again</button> : null}
+      {error ? (
+        <button className="mt-8 w-fit rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" onClick={() => window.location.reload()}>Check again</button>
+      ) : showFallbackButton ? (
+        <a
+          href={`/results/${localAuditId}`}
+          className="mt-8 inline-block w-fit rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
+        >
+          Access Your Full Report Now →
+        </a>
+      ) : null}
     </main>
   )
 }

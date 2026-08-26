@@ -63,7 +63,7 @@ export default function ResultsPage() {
   const scoreColor = interpretation.visibility_score >= 80 ? 'text-green-500' : interpretation.visibility_score >= 50 ? 'text-yellow-500' : 'text-red-500'
   const presenceColors: Record<string, string> = { "High": "bg-green-500/20 text-green-600", "Medium": "bg-yellow-500/20 text-yellow-600", "Low": "bg-red-500/20 text-red-600", "Not Found": "bg-gray-500/20 text-gray-500" }
 
-  return <ContentPage eyebrow="AI Audit Report" title="Here is your visibility breakdown." intro="Powered by Gemini 1.5 Flash analysis of raw search signals.">
+  return <ContentPage eyebrow="AI Audit Report" title="Here is your visibility breakdown." intro="Powered by Multi-Engine AI Brand Intelligence.">
     <div className="max-w-3xl space-y-5">
       <div className="rounded-3xl border border-violet-400/40 bg-violet-500/10 p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">

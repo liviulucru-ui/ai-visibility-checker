@@ -144,9 +144,12 @@ export async function POST(request: Request) {
     if (audit.status === 'payment_verified' || audit.status === 'ready') return NextResponse.json({ received: true, idempotent: true })
     if (audit.status === 'failed') return NextResponse.json({ error: 'Failed audits cannot be fulfilled.' }, { status: 409 })
 
+    const gumroadEmail = form.get('email') || null
     const now = new Date().toISOString()
     const { error } = await supabase.from('audits').update({
       gumroad_sale_id: saleId,
+      gumroad_email: gumroadEmail,
+      is_paid: true,
       payment_verified_at: now,
       status: 'processing',
       updated_at: now,
