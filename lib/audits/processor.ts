@@ -56,10 +56,10 @@ export async function processAudit(auditId: string) {
   }
   if (queryResults.every((item) => item.unavailable)) throw new Error('SerpApi did not return usable results.')
   let interpretation: z.infer<typeof schema> | null = null
-  const geminiKey = process.env.GEMINI_API_KEY_2
+  const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
     try {
-      const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })('gemini-3.6-flash'), temperature: 0, maxOutputTokens: 2400, prompt: `Interpret only this factual search evidence. Return JSON with exactly summary, key_findings, competitor_observations, brand_accuracy_observations, opportunities, prioritized_actions. Evidence:\n${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}` })
+      const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })('gemini-1.5-flash'), temperature: 0, maxOutputTokens: 2400, prompt: `Interpret only this factual search evidence. Return JSON with exactly summary, key_findings, competitor_observations, brand_accuracy_observations, opportunities, prioritized_actions. Evidence:\n${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}` })
       interpretation = schema.parse(JSON.parse(response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')))
     } catch (error) { console.error('[v0] paid Gemini interpretation unavailable', error instanceof Error ? error.message : 'unknown') }
   }

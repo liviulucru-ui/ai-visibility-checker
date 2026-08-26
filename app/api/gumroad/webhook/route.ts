@@ -145,6 +145,7 @@ export async function POST(request: Request) {
     // the verified payment state.
     waitUntil((async () => {
       try {
+        console.log('[Webhook] Processing audit generation for auditId:', auditId)
         await processAudit(auditId)
       } catch (processingError) {
         console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
