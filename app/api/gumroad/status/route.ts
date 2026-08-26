@@ -42,14 +42,46 @@ export async function GET(req: Request) {
     }
 
     const audit = audits[0];
-    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.full_report);
+    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
+
+    if (isReady) {
+      return NextResponse.json({
+        success: true,
+        status: 'ready',
+        auditId: audit.id,
+        ready: true,
+        hasReport: Boolean(audit.findings)
+      }, { status: 200 });
+    }
+
+    // Self-healing: if stuck in queued or processing with no findings, trigger generation
+    if ((audit.status === 'queued' || audit.status === 'processing' || audit.status === 'payment_verified') && !audit.findings) {
+      const { processAudit } = await import('@/lib/audits/processor');
+      const { waitUntil } = await import('@vercel/functions');
+
+      waitUntil((async () => {
+        try {
+          await processAudit(audit.id)
+        } catch (processingError) {
+          console.error('[v0] self-healing audit processing failed', processingError)
+        }
+      })())
+
+      return NextResponse.json({
+        success: true,
+        status: 'processing',
+        auditId: audit.id,
+        ready: false,
+        hasReport: false
+      }, { status: 200 });
+    }
 
     return NextResponse.json({
       success: true,
       status: audit.status || 'processing',
       auditId: audit.id,
-      ready: isReady,
-      hasReport: Boolean(audit.full_report)
+      ready: false,
+      hasReport: false
     }, { status: 200 });
 
   } catch (err: any) {

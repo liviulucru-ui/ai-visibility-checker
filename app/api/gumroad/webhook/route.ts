@@ -148,9 +148,9 @@ export async function POST(request: Request) {
     const { error } = await supabase.from('audits').update({
       gumroad_sale_id: saleId,
       payment_verified_at: now,
-      status: 'payment_verified',
+      status: 'processing',
       updated_at: now,
-    }).eq('id', auditId).in('status', ['queued', 'processing'])
+    }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
 
     // Payment verification is durable before processing begins. Schedule the

@@ -39,10 +39,11 @@ export async function processAudit(auditId: string) {
     const db = adminClient()
     const { data: audit, error } = await db.from('audits').select('*').eq('id', auditId).maybeSingle()
     if (error || !audit) throw new Error('Audit not found.')
-    if (audit.status === 'ready' || audit.status === 'completed') return { status: 'ready' as const, skipped: true }
-  const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).eq('status', 'payment_verified')
-  if (claimError) throw claimError
-  if (claimed !== 1) return { status: 'processing' as const, skipped: true }
+    if (audit.status === 'ready' || audit.status === 'completed' || audit.findings !== null) return { status: 'ready' as const, skipped: true }
+
+    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
+    if (claimError) throw claimError
+    if (claimed !== 1) return { status: 'processing' as const, skipped: true }
   const key = process.env.SERPAPI_KEY_2
   if (!key) throw new Error('SerpApi is not configured on the server.')
   const queryResults: Array<{ query: string; results: Array<{ title?: string; link?: string; snippet?: string }>; unavailable?: boolean; provider_error?: string }> = []
