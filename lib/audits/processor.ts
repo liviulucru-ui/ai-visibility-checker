@@ -60,8 +60,9 @@ export async function processAudit(auditId: string) {
     const { data: audit, error } = await db.from('audits').select('*').eq('id', auditId).maybeSingle()
     if (error || !audit) throw new Error('Audit not found.')
     if (audit.status === 'ready' || audit.status === 'completed' || audit.findings !== null) return { status: 'ready' as const, skipped: true }
+    if (audit.status === 'processing') return { status: 'processing' as const, skipped: true }
 
-    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
+    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified'])
     if (claimError) throw claimError
     if (claimed !== 1) return { status: 'processing' as const, skipped: true }
   const key = process.env.SERPAPI_KEY_2
@@ -79,20 +80,22 @@ export async function processAudit(auditId: string) {
   let interpretation: z.infer<typeof schema> | null = null
   const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
-    const models = ['gemini-3.6-flash', 'gemini-3-flash']
+    const models = ['gemini-3.6-flash']
     for (const modelName of models) {
-      try {
-        const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
-Do not invent information. Follow this JSON schema exactly:
+      let attempts = 0;
+      while (attempts < 2) {
+        try {
+          const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
   "visibility_score": number (0-100),
   "summary": string,
   "brand_presence": "High" | "Medium" | "Low" | "Not Found",
   "top_competitors": [{"name": string, "domain": string, "strengths": string}],
   "ai_readiness_breakdown": {
-    "chatgpt_visibility": string,
-    "perplexity_search_rank": string,
-    "google_gemini_presence": string
+    "chatgpt_visibility": "Low" | "Medium" | "High",
+    "perplexity_search_rank": "Low" | "Medium" | "High",
+    "google_gemini_presence": "Low" | "Medium" | "High"
   },
   "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
 }
@@ -100,12 +103,24 @@ Do not invent information. Follow this JSON schema exactly:
 Evidence:
 ${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}`
 
-        const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })(modelName), temperature: 0, maxOutputTokens: 2400, prompt })
-        interpretation = schema.parse(JSON.parse(response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')))
-        break
-      } catch (error) {
-        console.warn(`[v0] paid Gemini interpretation failed for model ${modelName}`, error instanceof Error ? error.message : 'unknown')
+          const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })(modelName), temperature: 0.2, maxTokens: 8192, prompt })
+
+          try {
+            const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+            interpretation = schema.parse(JSON.parse(clean))
+            break
+          } catch (parseError) {
+            console.error('[v0] Gemini JSON parse failed. Raw text:', response.text)
+            if (attempts === 1) throw parseError
+          }
+        } catch (error) {
+          if (attempts === 1) {
+            console.warn(`[v0] paid Gemini interpretation failed for model ${modelName}`, error instanceof Error ? error.message : 'unknown')
+          }
+        }
+        attempts++
       }
+      if (interpretation) break
     }
     if (!interpretation) {
       console.error('[v0] paid Gemini interpretation unavailable after all retries')

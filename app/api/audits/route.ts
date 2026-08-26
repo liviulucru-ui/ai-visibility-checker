@@ -102,37 +102,49 @@ async function interpretEvidence(evidence: unknown): Promise<Interpretation | nu
   const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
 
-  const models = ['gemini-3.6-flash', 'gemini-3-flash']
+  const models = ['gemini-3.6-flash']
   let lastError: unknown
 
   for (const modelName of models) {
-    try {
-      const response = await generateText({
-        model: createGoogleGenerativeAI({ apiKey: key })(modelName),
-        temperature: 0,
-        maxOutputTokens: 2400,
-        prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
-Do not invent information. Follow this JSON schema exactly:
+    let attempts = 0;
+    while (attempts < 2) {
+      try {
+        const response = await generateText({
+          model: createGoogleGenerativeAI({ apiKey: key })(modelName),
+          temperature: 0.2,
+          maxTokens: 8192,
+          prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
   "visibility_score": number (0-100),
   "summary": string,
   "brand_presence": "High" | "Medium" | "Low" | "Not Found",
   "top_competitors": [{"name": string, "domain": string, "strengths": string}],
   "ai_readiness_breakdown": {
-    "chatgpt_visibility": string,
-    "perplexity_search_rank": string,
-    "google_gemini_presence": string
+    "chatgpt_visibility": "Low" | "Medium" | "High",
+    "perplexity_search_rank": "Low" | "Medium" | "High",
+    "google_gemini_presence": "Low" | "Medium" | "High"
   },
   "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
 }
 
 EVIDENCE:\n${JSON.stringify(evidence)}`,
-      })
-      const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-      return interpretationSchema.parse(JSON.parse(clean))
-    } catch (error) {
-      lastError = error
-      console.warn(`[v0] Gemini interpretation failed for model ${modelName}`, geminiDiagnostic(error))
+        })
+
+        try {
+          const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+          return interpretationSchema.parse(JSON.parse(clean))
+        } catch (parseError) {
+          console.error('[v0] Gemini JSON parse failed. Raw text:', response.text)
+          if (attempts === 1) throw parseError
+        }
+      } catch (error) {
+        lastError = error
+        if (attempts === 1) {
+          console.warn(`[v0] Gemini interpretation failed for model ${modelName}`, geminiDiagnostic(error))
+        }
+      }
+      attempts++
     }
   }
 
