@@ -79,7 +79,7 @@ export async function processAudit(auditId: string) {
   let interpretation: z.infer<typeof schema> | null = null
   const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+    const models = ['gemini-3.6-flash', 'gemini-3-flash']
     for (const modelName of models) {
       try {
         const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.

@@ -94,7 +94,7 @@ function geminiDiagnostic(error: unknown) {
     statusText: candidate.statusText ?? null,
     providerCode: providerCode ?? null,
     providerMessage: providerMessage.slice(0, 500),
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.6-flash',
   }
 }
 
@@ -102,7 +102,7 @@ async function interpretEvidence(evidence: unknown): Promise<Interpretation | nu
   const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
 
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+  const models = ['gemini-3.6-flash', 'gemini-3-flash']
   let lastError: unknown
 
   for (const modelName of models) {
