@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { processAudit } from '@/lib/audits/processor'
+import { waitUntil } from '@vercel/functions'
 
 export const runtime = 'nodejs'
 
@@ -34,6 +36,25 @@ export async function GET(request: Request) {
 
     const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
+
+    if (data.status === 'payment_verified') {
+      waitUntil((async () => {
+        try {
+          await processAudit(data.id)
+        } catch (processingError) {
+          console.error('[v0] self-healing audit processing failed', processingError instanceof Error ? processingError.message : 'unknown')
+        }
+      })())
+      return NextResponse.json({
+        id: data.id,
+        auditId: data.id,
+        status: 'processing',
+        score: data.score,
+        ready: false,
+        reportReady: false,
+        reportUrl: null
+      })
+    }
 
     return NextResponse.json({
       id: data.id,
