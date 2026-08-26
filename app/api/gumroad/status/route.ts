@@ -15,16 +15,16 @@ function db() {
 }
 
 export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams
-  const auditId = searchParams.get('audit_id')
-  const saleId = searchParams.get('sale_id')
-  const cookie = (await cookies()).get('purchase_access')?.value
-  const [cookieId, token] = cookie?.split(':') ?? []
-
-  const targetId = auditId || cookieId
-  if (!targetId || !token) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
-
   try {
+    const searchParams = new URL(request.url).searchParams
+    const auditId = searchParams.get('audit_id')
+    const saleId = searchParams.get('sale_id')
+    const cookie = (await cookies()).get('purchase_access')?.value
+    const [cookieId, token] = cookie?.split(':') ?? []
+
+    const targetId = auditId || cookieId
+    if (!targetId || !token) return NextResponse.json({ success: false, status: 'not_found', error: 'Purchase session not found.' }, { status: 404 })
+
     const hash = createHash('sha256').update(token).digest('hex')
 
     let query = db().from('audits').select('id,status,score,findings').eq('report_access_token_hash', hash)
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     }
 
     const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle()
-    if (error || !data) return NextResponse.json({ error: 'Purchase session not found.' }, { status: 404 })
+    if (error || !data) return NextResponse.json({ success: false, status: 'not_found', error: 'Purchase session not found.' }, { status: 404 })
 
     if (data.status === 'payment_verified') {
       waitUntil((async () => {
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
         }
       })())
       return NextResponse.json({
+        success: true,
         id: data.id,
         auditId: data.id,
         status: 'processing',
@@ -53,17 +54,22 @@ export async function GET(request: Request) {
         ready: false,
         reportReady: false,
         reportUrl: null
-      })
+      }, { status: 200 })
     }
 
+    const isReady = data.status === 'ready' || data.status === 'completed'
     return NextResponse.json({
+      success: true,
       id: data.id,
       auditId: data.id,
-      status: data.status,
+      status: data.status || 'pending',
       score: data.score,
-      ready: data.status === 'ready',
-      reportReady: data.status === 'ready',
-      reportUrl: data.status === 'ready' ? `/results/${data.id}?token=${encodeURIComponent(token)}` : null
-    })
-  } catch { return NextResponse.json({ error: 'Payment status is temporarily unavailable.' }, { status: 503 }) }
+      ready: isReady,
+      reportReady: isReady,
+      reportUrl: isReady ? `/results/${data.id}?token=${encodeURIComponent(token)}` : null
+    }, { status: 200 })
+  } catch (err) {
+    console.error('[Gumroad Status Error]', err)
+    return NextResponse.json({ error: 'internal_error' }, { status: 500 })
+  }
 }
