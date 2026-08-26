@@ -51,3 +51,14 @@
 html { @apply bg-background; scroll-behavior: smooth; }
 body { @apply bg-background text-foreground font-sans; }
 ::selection { background: var(--accent); color: var(--accent-foreground); }
+
+@media print {
+  nav, footer, .print-hide { display: none !important; }
+  body { background: white !important; color: black !important; }
+  section, div.rounded-3xl {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border-color: #e5e7eb !important;
+    background-color: white !important;
+  }
+}

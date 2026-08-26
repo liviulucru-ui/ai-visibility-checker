@@ -141,6 +141,15 @@ export default function ResultsPage() {
               <p className="text-sm text-muted-foreground">No actions recommended at this time.</p>
             )}
           </section>
+
+          <div className="mt-8 flex justify-center print-hide">
+            <button
+              onClick={() => window.print()}
+              className="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
+            >
+              Download PDF Report
+            </button>
+          </div>
         </>
       )}
     </div>
