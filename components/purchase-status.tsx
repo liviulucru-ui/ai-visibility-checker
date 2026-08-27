@@ -6,7 +6,7 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
   const [status, setStatus] = useState('verifying')
   const [error, setError] = useState('')
   const [showFallbackButton, setShowFallbackButton] = useState(false)
-  const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('pending_audit_id') || '' : '')
+  const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('last_audit_id') || localStorage.getItem('pending_audit_id') || '' : '')
 
   useEffect(() => {
     let active = true
@@ -80,12 +80,16 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
       {error ? (
         <button className="mt-8 w-fit rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground" onClick={() => window.location.reload()}>Check again</button>
       ) : showFallbackButton ? (
-        <a
-          href={`/results/${localAuditId}`}
-          className="mt-8 inline-block w-fit rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
-        >
-          Access Your Full Report Now →
-        </a>
+        localAuditId ? (
+          <a
+            href={`/results/${localAuditId}`}
+            className="mt-8 inline-block w-fit rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
+          >
+            Access Your Full Report Now →
+          </a>
+        ) : (
+          <p className="mt-8 text-sm text-red-500 font-medium">Could not find your session. Please check your email or enter your domain.</p>
+        )
       ) : null}
     </main>
   )

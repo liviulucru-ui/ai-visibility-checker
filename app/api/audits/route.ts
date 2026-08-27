@@ -98,6 +98,37 @@ function geminiDiagnostic(error: unknown) {
   }
 }
 
+export function extractCleanSearchData(rawSerpApiData: any) {
+  if (!rawSerpApiData) return [];
+
+  if (Array.isArray(rawSerpApiData)) {
+    return rawSerpApiData.map((queryResult) => ({
+      query: queryResult.query,
+      results: extractCleanSearchData(queryResult)
+    }))
+  }
+
+  const organic = (rawSerpApiData.results || rawSerpApiData.organic_results || []).map((item: any) => ({
+    title: item.title || '',
+    snippet: item.snippet || '',
+    link: item.link || '',
+    source: item.source || item.displayed_link || ''
+  }));
+
+  const answerBox = rawSerpApiData.answer_box
+    ? {
+        title: rawSerpApiData.answer_box.title || '',
+        snippet: rawSerpApiData.answer_box.snippet || rawSerpApiData.answer_box.answer || '',
+        link: rawSerpApiData.answer_box.link || ''
+      }
+    : null;
+
+  return {
+    organic_results: organic.slice(0, 8),
+    answer_box: answerBox
+  };
+}
+
 async function interpretEvidence(evidence: unknown): Promise<Interpretation | null> {
   const key = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (!key) throw new Error('Gemini is not configured on the server. GEMINI_API_KEY is unavailable to the running server process.')
@@ -128,7 +159,10 @@ Do not invent information. Follow this JSON schema exactly without markdown form
   "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
 }
 
-EVIDENCE:\n${JSON.stringify(evidence)}`,
+EVIDENCE:\n${JSON.stringify({
+  ...evidence as any,
+  query_results: extractCleanSearchData((evidence as any).query_results)
+})}`,
         })
 
         try {

@@ -99,7 +99,7 @@ export default function ResultsPage() {
           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/90 z-10 pointer-events-none" />
           <h3 className="font-semibold relative z-20 text-xl">Unlock the Full Action Plan</h3>
           <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto relative z-20">Get the complete AI Readiness Breakdown (ChatGPT & Perplexity metrics) and a step-by-step checklist of actionable recommendations to dominate your niche.</p>
-          <div className="mt-6 relative z-20 flex justify-center">
+          <div className="mt-6 relative z-20 flex justify-center" onClick={() => { if (typeof window !== 'undefined' && params.id) localStorage.setItem('last_audit_id', String(params.id)) }}>
             <CTA href={`https://aibrandcheck.gumroad.com/l/wgudko?audit_id=${params.id}&wanted=true`}>Get Full Report — $19 →</CTA>
           </div>
 
