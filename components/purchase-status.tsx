@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: string }) {
   const [status, setStatus] = useState('verifying')
   const [error, setError] = useState('')
   const [showFallbackButton, setShowFallbackButton] = useState(false)
   const localAuditId = auditId || (typeof window !== 'undefined' ? localStorage.getItem('last_audit_id') || localStorage.getItem('pending_audit_id') || '' : '')
+  const router = useRouter()
 
   useEffect(() => {
     let active = true
@@ -20,11 +22,20 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
     const verifySession = async () => {
       if (!localAuditId) return
       try {
-        await fetch('/api/gumroad/verify-session', {
+        const res = await fetch('/api/gumroad/verify-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ audit_id: localAuditId, sale_id: saleId })
         })
+        const data = await res.json()
+        if (active && data.success && data.is_paid) {
+          if (data.redirect_url) {
+            router.push(data.redirect_url)
+            return
+          } else {
+             // If processing deep audit wait for it to be ready via polling
+          }
+        }
       } catch (err) {
         console.error('Proactive session verification failed', err)
       }
@@ -61,7 +72,7 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
           if (result.reportUrl) {
             window.location.assign(result.reportUrl)
           } else {
-            window.location.assign(`/results/${result.auditId || localAuditId}`)
+            window.location.assign(`/results/${result.auditId || localAuditId}?paid=true`)
           }
           return
         }
@@ -79,7 +90,7 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
       active = false
       clearTimeout(timeoutTimer)
     }
-  }, [auditId, saleId, localAuditId])
+  }, [auditId, saleId, localAuditId, router])
 
   const isProcessing = status === 'payment_verified' || status === 'processing'
 
@@ -97,7 +108,7 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
       ) : showFallbackButton ? (
         localAuditId ? (
           <a
-            href={`/results/${localAuditId}`}
+            href={`/results/${localAuditId}?paid=true`}
             className="mt-8 inline-block w-fit rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
           >
             Access Your Full Report Now →

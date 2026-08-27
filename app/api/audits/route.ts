@@ -268,13 +268,15 @@ export async function GET(request: Request) {
   try {
     const db = adminClient()
     if (!token) {
-      const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['queued', 'payment_verified', 'processing', 'ready', 'completed']).maybeSingle()
-      if (error || !data) return NextResponse.json({ error: 'Audit not found or requires authorization.' }, { status: 404 })
+      // Must return full projection of data including 'score' and 'findings' so that users returning from Gumroad
+      // checkout who may have lost their session token in the redirect can still view their paid report.
+      const { data, error } = await db.from('audits').select('id,status,score,is_paid,payment_verified_at,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['queued', 'payment_verified', 'processing', 'ready', 'completed']).maybeSingle()
+      if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
       return NextResponse.json(data)
     }
 
     const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
+    const { data, error } = await db.from('audits').select('id,status,score,is_paid,payment_verified_at,findings,created_at,gumroad_sale_id').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
     if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
     return NextResponse.json(data)
   } catch { return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }

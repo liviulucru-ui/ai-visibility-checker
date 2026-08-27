@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 
+// Re-add verifySale as a strict security measure
 function expectedPermalink() {
   const productCandidates = [process.env.GUMROAD_PRODUCT_URL_2].filter((value): value is string => Boolean(value))
   for (const productUrl of productCandidates) {
@@ -44,20 +45,11 @@ async function verifySale(saleId: string) {
 
 export async function POST(req: Request) {
   try {
-    const { audit_id, sale_id } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { audit_id, sale_id } = body;
 
-    if (!audit_id || !sale_id) {
-      return NextResponse.json({ success: false, error: 'missing_audit_id_or_sale_id' }, { status: 400 });
-    }
-
-    const verification = await verifySale(sale_id);
-
-    if (verification.unavailable) {
-      return NextResponse.json({ success: false, error: 'verification_service_unavailable' }, { status: 503 });
-    }
-
-    if (!verification.ok || verification.auditId !== audit_id) {
-      return NextResponse.json({ success: false, error: 'invalid_sale' }, { status: 403 });
+    if (!audit_id) {
+      return NextResponse.json({ success: false, error: 'missing_audit_id' }, { status: 400 });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -78,6 +70,27 @@ export async function POST(req: Request) {
 
     if (fetchError || !audit) {
       return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 });
+    }
+
+    // A better approach to secure the endpoint without relying on sale_id from the client
+    // is to have the server check the database for verified payments associated with the audit_id.
+    // If the audit is already marked as paid (e.g. by the webhook), we can safely unlock the session.
+    let isPaymentVerified = audit.is_paid;
+
+    // If it's not already verified and we have a sale_id from the client, try to verify it with Gumroad
+    if (!isPaymentVerified && sale_id) {
+      const verification = await verifySale(sale_id);
+
+      if (verification.unavailable) {
+         // Silently proceed; let polling continue rather than fail hard
+      } else if (verification.ok && verification.auditId === audit_id) {
+         isPaymentVerified = true;
+      }
+    }
+
+    if (!isPaymentVerified) {
+       // Return success: false but do not throw 400, just say it's not verified yet
+       return NextResponse.json({ success: false, is_paid: false });
     }
 
     // Force unlock server-side immediately so the user isn't stuck waiting for the webhook
@@ -107,10 +120,10 @@ export async function POST(req: Request) {
           console.error('[Verify Session] Deep audit generation failed', err);
         }
       })());
-      return NextResponse.json({ success: true, processing: true });
+      return NextResponse.json({ success: true, processing: true, is_paid: true });
     }
 
-    return NextResponse.json({ success: true, redirect_url: `/results/${audit_id}` });
+    return NextResponse.json({ success: true, redirect_url: `/results/${audit_id}?paid=true`, is_paid: true });
 
   } catch (error) {
     console.error('[Verify Session Error]', error);
