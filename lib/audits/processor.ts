@@ -127,7 +127,7 @@ export async function processAudit(auditId: string) {
     const isPaid = Boolean(audit.is_paid || audit.gumroad_sale_id || audit.payment_verified_at)
 
     if (audit.status === 'ready' || audit.status === 'completed') {
-      if (!isPaid || (isPaid && audit.findings && audit.findings.engine_readiness)) {
+      if (!isPaid || (isPaid && audit.findings && audit.findings.ai_interpretation?.engine_readiness)) {
         return { status: 'ready' as const, skipped: true }
       }
     }

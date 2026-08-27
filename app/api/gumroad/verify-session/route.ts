@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     }
 
     // Force unlock server-side immediately so the user isn't stuck waiting for the webhook
-    const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).engine_readiness);
+    const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.engine_readiness);
 
     const { error: updateError } = await supabaseAdmin
       .from('audits')
