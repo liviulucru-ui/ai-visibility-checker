@@ -42,17 +42,6 @@ export async function GET(req: Request) {
     }
 
     const audit = audits[0];
-    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
-
-    if (isReady) {
-      return NextResponse.json({
-        success: true,
-        status: 'ready',
-        auditId: audit.id,
-        ready: true,
-        hasReport: Boolean(audit.findings)
-      }, { status: 200 });
-    }
 
     // Self-healing: if stuck in queued or payment_verified with no findings, trigger generation
     // Also, if paid but marked ready without the deep audit findings, trigger generation
@@ -80,6 +69,18 @@ export async function GET(req: Request) {
         auditId: audit.id,
         ready: false,
         hasReport: false
+      }, { status: 200 });
+    }
+
+    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
+
+    if (isReady) {
+      return NextResponse.json({
+        success: true,
+        status: 'ready',
+        auditId: audit.id,
+        ready: true,
+        hasReport: Boolean(audit.findings)
       }, { status: 200 });
     }
 

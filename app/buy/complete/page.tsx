@@ -16,8 +16,12 @@ export default async function PurchaseComplete({ searchParams }: { searchParams:
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
   if (url && key) {
-    const { data } = await createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } }).from('audits').select('id,status').eq('id', finalAuditId).eq('report_access_token_hash', createHash('sha256').update(token).digest('hex')).maybeSingle()
-    if (data?.status === 'ready') redirect(`/results/${finalAuditId}?token=${encodeURIComponent(token)}`)
+    const { data } = await createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } }).from('audits').select('id,status,is_paid,findings').eq('id', finalAuditId).eq('report_access_token_hash', createHash('sha256').update(token).digest('hex')).maybeSingle()
+
+    // Disable automatic pre-redirect in this server component because we want to guarantee the
+    // client mounts and calls /api/gumroad/verify-session to securely set `is_paid = true`.
+    // The webhook might be delayed, causing `data.is_paid` to still be false here.
+    // Let `<PurchaseStatus>` handle the polling and the secure redirect.
   }
   return <PurchaseStatus auditId={finalAuditId} saleId={sale_id} />
 }
