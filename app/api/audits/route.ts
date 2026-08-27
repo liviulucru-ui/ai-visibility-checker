@@ -268,7 +268,7 @@ export async function GET(request: Request) {
   try {
     const db = adminClient()
     if (!token) {
-      const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['ready', 'completed']).maybeSingle()
+      const { data, error } = await db.from('audits').select('id,status,score,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['queued', 'payment_verified', 'processing', 'ready', 'completed']).maybeSingle()
       if (error || !data) return NextResponse.json({ error: 'Audit not found or requires authorization.' }, { status: 404 })
       return NextResponse.json(data)
     }
