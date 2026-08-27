@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       gumroad_email: gumroadEmail,
       is_paid: true,
       payment_verified_at: now,
-      status: 'processing',
+      status: 'payment_verified',
       updated_at: now,
     }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
