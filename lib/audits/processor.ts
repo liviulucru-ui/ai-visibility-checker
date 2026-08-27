@@ -3,7 +3,7 @@ import { generateText } from 'ai'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
-const schema = z.object({
+const freeSchema = z.object({
   visibility_score: z.number().min(0).max(100),
   summary: z.string(),
   brand_presence: z.enum(["High", "Medium", "Low", "Not Found"]),
@@ -24,6 +24,39 @@ const schema = z.object({
       priority: z.enum(["High", "Medium"]),
       action: z.string(),
       impact: z.string()
+    })
+  )
+})
+
+const paidSchema = z.object({
+  visibility_score: z.number().min(0).max(100),
+  presence_level: z.enum(["High", "Medium", "Low", "Not Found", "Absent", "Weak", "Moderate"]),
+  executive_summary: z.string(),
+  engine_readiness: z.object({
+    chatgpt_search: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
+    perplexity_ai: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
+    google_ai_overview: z.object({ score: z.number(), status: z.string(), analysis: z.string() })
+  }),
+  in_depth_competitors: z.array(
+    z.object({
+      name: z.string(),
+      domain: z.string(),
+      visibility_score: z.number(),
+      why_ai_recommends_them: z.string(),
+      content_gaps: z.string()
+    })
+  ),
+  technical_ai_signals: z.object({
+    schema_markup: z.string(),
+    entity_disambiguation: z.string(),
+    sentiment_and_mentions: z.string()
+  }),
+  action_plan_30_days: z.array(
+    z.object({
+      day_range: z.string(),
+      priority: z.enum(["High", "Medium", "Low"]),
+      action: z.string(),
+      description: z.string()
     })
   )
 })
@@ -90,10 +123,16 @@ export async function processAudit(auditId: string) {
     const db = adminClient()
     const { data: audit, error } = await db.from('audits').select('*').eq('id', auditId).maybeSingle()
     if (error || !audit) throw new Error('Audit not found.')
-    if (audit.status === 'ready' || audit.status === 'completed' || audit.findings !== null) return { status: 'ready' as const, skipped: true }
-    if (audit.status === 'processing') return { status: 'processing' as const, skipped: true }
 
-    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified'])
+    const isPaid = Boolean(audit.is_paid || audit.gumroad_sale_id || audit.payment_verified_at)
+
+    if (audit.status === 'ready' || audit.status === 'completed') {
+      if (!isPaid || (isPaid && audit.findings && audit.findings.ai_interpretation?.engine_readiness)) {
+        return { status: 'ready' as const, skipped: true }
+      }
+    }
+
+    const { error: claimError, count: claimed } = await db.from('audits').update({ status: 'processing', updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'ready'])
     if (claimError) throw claimError
     if (claimed !== 1) return { status: 'processing' as const, skipped: true }
   const key = process.env.SERPAPI_KEY_2
@@ -108,7 +147,7 @@ export async function processAudit(auditId: string) {
     } catch { queryResults.push({ query, results: [], unavailable: true, provider_error: 'SerpApi could not be reached.' }) }
   }
   if (queryResults.every((item) => item.unavailable)) throw new Error('SerpApi did not return usable results.')
-  let interpretation: z.infer<typeof schema> | null = null
+  let interpretation: z.infer<typeof freeSchema> | z.infer<typeof paidSchema> | null = null
   const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY_2
   if (geminiKey) {
     const models = ['gemini-3.6-flash']
@@ -116,7 +155,7 @@ export async function processAudit(auditId: string) {
       let attempts = 0;
       while (attempts < 2) {
         try {
-          const prompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+          const freePrompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
 Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
   "visibility_score": number (0-100),
@@ -129,7 +168,44 @@ Do not invent information. Follow this JSON schema exactly without markdown form
     "google_gemini_presence": "Low" | "Medium" | "High"
   },
   "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
-}
+}`
+
+          const paidPrompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a comprehensive structured JSON report for a Deep Audit.
+Do not invent information. Follow this JSON schema exactly without markdown formatting:
+{
+  "visibility_score": number (0-100),
+  "presence_level": "High" | "Medium" | "Low" | "Not Found" | "Absent" | "Weak" | "Moderate",
+  "executive_summary": string (2-3 paragraphs),
+  "engine_readiness": {
+    "chatgpt_search": { "score": number, "status": string, "analysis": string },
+    "perplexity_ai": { "score": number, "status": string, "analysis": string },
+    "google_ai_overview": { "score": number, "status": string, "analysis": string }
+  },
+  "in_depth_competitors": [
+    {
+      "name": string,
+      "domain": string,
+      "visibility_score": number,
+      "why_ai_recommends_them": string,
+      "content_gaps": string
+    }
+  ],
+  "technical_ai_signals": {
+    "schema_markup": string,
+    "entity_disambiguation": string,
+    "sentiment_and_mentions": string
+  },
+  "action_plan_30_days": [
+    {
+      "day_range": string,
+      "priority": "High" | "Medium" | "Low",
+      "action": string,
+      "description": string
+    }
+  ]
+}`
+
+          const prompt = `${isPaid ? paidPrompt : freePrompt}
 
 Evidence:
 ${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: extractCleanSearchData(queryResults) })}`
@@ -138,7 +214,7 @@ ${JSON.stringify({ business_name: audit.business_name, website_url: audit.websit
 
           try {
             const clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-            interpretation = schema.parse(JSON.parse(clean))
+            interpretation = isPaid ? paidSchema.parse(JSON.parse(clean)) : freeSchema.parse(JSON.parse(clean))
             break
           } catch (parseError) {
             console.error('[v0] Gemini JSON parse failed. Raw text:', response.text)

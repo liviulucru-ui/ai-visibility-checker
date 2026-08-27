@@ -16,6 +16,21 @@ export function PurchaseStatus({ auditId, saleId }: { auditId: string; saleId?: 
 
     let retries = 0
 
+    // First, proactively verify the session server-side to prevent webhook race conditions
+    const verifySession = async () => {
+      if (!localAuditId) return
+      try {
+        await fetch('/api/gumroad/verify-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audit_id: localAuditId, sale_id: saleId })
+        })
+      } catch (err) {
+        console.error('Proactive session verification failed', err)
+      }
+    }
+    verifySession()
+
     const poll = async () => {
       try {
         const params = new URLSearchParams()

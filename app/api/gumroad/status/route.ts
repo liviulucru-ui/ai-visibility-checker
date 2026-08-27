@@ -42,25 +42,21 @@ export async function GET(req: Request) {
     }
 
     const audit = audits[0];
-    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
-
-    if (isReady) {
-      return NextResponse.json({
-        success: true,
-        status: 'ready',
-        auditId: audit.id,
-        ready: true,
-        hasReport: Boolean(audit.findings)
-      }, { status: 200 });
-    }
 
     // Self-healing: if stuck in queued or payment_verified with no findings, trigger generation
-    if ((audit.status === 'queued' || audit.status === 'payment_verified') && !audit.findings) {
+    // Also, if paid but marked ready without the deep audit findings, trigger generation
+    const isPaid = Boolean(audit.is_paid || audit.gumroad_sale_id || audit.payment_verified_at)
+    const isMissingDeepAudit = isPaid && (!audit.findings || !audit.findings.ai_interpretation?.engine_readiness)
+
+    if (((audit.status === 'queued' || audit.status === 'payment_verified') && !audit.findings) || isMissingDeepAudit) {
       const { processAudit } = await import('@/lib/audits/processor');
       const { waitUntil } = await import('@vercel/functions');
 
       waitUntil((async () => {
         try {
+          if (isMissingDeepAudit && audit.status === 'ready') {
+             await supabase.from('audits').update({ status: 'payment_verified' }).eq('id', audit.id)
+          }
           await processAudit(audit.id)
         } catch (processingError) {
           console.error('[v0] self-healing audit processing failed', processingError)
@@ -73,6 +69,18 @@ export async function GET(req: Request) {
         auditId: audit.id,
         ready: false,
         hasReport: false
+      }, { status: 200 });
+    }
+
+    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
+
+    if (isReady) {
+      return NextResponse.json({
+        success: true,
+        status: 'ready',
+        auditId: audit.id,
+        ready: true,
+        hasReport: Boolean(audit.findings)
       }, { status: 200 });
     }
 

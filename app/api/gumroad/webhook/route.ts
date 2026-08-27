@@ -139,9 +139,11 @@ export async function POST(request: Request) {
     }
 
     const supabase = adminClient()
-    const { data: audit, error: lookupError } = await supabase.from('audits').select('id,status,gumroad_sale_id').eq('id', auditId).maybeSingle()
+    const { data: audit, error: lookupError } = await supabase.from('audits').select('id,status,gumroad_sale_id,is_paid').eq('id', auditId).maybeSingle()
     if (lookupError || !audit) return NextResponse.json({ error: 'Audit could not be found.' }, { status: 404 })
-    if (audit.status === 'payment_verified' || audit.status === 'ready') return NextResponse.json({ received: true, idempotent: true })
+
+    // Allow 'ready' audits to be upgraded to paid. Only skip if it's already explicitly paid and verified.
+    if (audit.status === 'payment_verified' || (audit.status === 'ready' && audit.is_paid)) return NextResponse.json({ received: true, idempotent: true })
     if (audit.status === 'failed') return NextResponse.json({ error: 'Failed audits cannot be fulfilled.' }, { status: 409 })
 
     const gumroadEmail = form.get('email') || null
@@ -151,9 +153,9 @@ export async function POST(request: Request) {
       gumroad_email: gumroadEmail,
       is_paid: true,
       payment_verified_at: now,
-      status: 'processing',
+      status: 'payment_verified',
       updated_at: now,
-    }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing'])
+    }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing', 'ready'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
 
     // Payment verification is durable before processing begins. Schedule the
