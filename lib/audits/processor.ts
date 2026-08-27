@@ -54,6 +54,37 @@ function score(items: Array<{ results: Array<{ title?: string; link?: string; sn
   return Math.round((mentions / valid.length) * 55 + (top / valid.length) * 25 + (citations / valid.length) * 20)
 }
 
+export function extractCleanSearchData(rawSerpApiData: any) {
+  if (!rawSerpApiData) return [];
+
+  if (Array.isArray(rawSerpApiData)) {
+    return rawSerpApiData.map((queryResult) => ({
+      query: queryResult.query,
+      results: extractCleanSearchData(queryResult)
+    }))
+  }
+
+  const organic = (rawSerpApiData.results || rawSerpApiData.organic_results || []).map((item: any) => ({
+    title: item.title || '',
+    snippet: item.snippet || '',
+    link: item.link || '',
+    source: item.source || item.displayed_link || ''
+  }));
+
+  const answerBox = rawSerpApiData.answer_box
+    ? {
+        title: rawSerpApiData.answer_box.title || '',
+        snippet: rawSerpApiData.answer_box.snippet || rawSerpApiData.answer_box.answer || '',
+        link: rawSerpApiData.answer_box.link || ''
+      }
+    : null;
+
+  return {
+    organic_results: organic.slice(0, 8),
+    answer_box: answerBox
+  };
+}
+
 export async function processAudit(auditId: string) {
   try {
     const db = adminClient()
@@ -101,7 +132,7 @@ Do not invent information. Follow this JSON schema exactly without markdown form
 }
 
 Evidence:
-${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: queryResults })}`
+${JSON.stringify({ business_name: audit.business_name, website_url: audit.website_url, query_results: extractCleanSearchData(queryResults) })}`
 
           const response = await generateText({ model: createGoogleGenerativeAI({ apiKey: geminiKey })(modelName), temperature: 0.2, maxTokens: 8192, prompt })
 
