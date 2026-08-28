@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-// Re-add verifySale as a strict security measure
 function expectedPermalink() {
   const productCandidates = [process.env.GUMROAD_PRODUCT_URL_2].filter((value): value is string => Boolean(value))
   for (const productUrl of productCandidates) {
@@ -46,84 +46,95 @@ async function verifySale(saleId: string) {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { audit_id, sale_id } = body;
+    const auditId = body.audit_id || body.auditId;
+    const saleId = body.sale_id || body.saleId;
 
-    if (!audit_id) {
+    if (!auditId) {
       return NextResponse.json({ success: false, error: 'missing_audit_id' }, { status: 400 });
     }
-
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('[Verify Session] Missing Supabase credentials');
-      return NextResponse.json({ success: false, error: 'config_error' }, { status: 500 });
-    }
-
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
     const { data: audit, error: fetchError } = await supabaseAdmin
       .from('audits')
       .select('id,status,is_paid,findings,gumroad_sale_id')
-      .eq('id', audit_id)
+      .eq('id', auditId)
       .single();
 
     if (fetchError || !audit) {
       return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 });
     }
 
-    // A better approach to secure the endpoint without relying on sale_id from the client
-    // is to have the server check the database for verified payments associated with the audit_id.
-    // If the audit is already marked as paid (e.g. by the webhook), we can safely unlock the session.
-    let isPaymentVerified = audit.is_paid;
-
-    // If it's not already verified and we have a sale_id from the client, try to verify it with Gumroad
-    if (!isPaymentVerified && sale_id) {
-      const verification = await verifySale(sale_id);
-
-      if (verification.unavailable) {
-         // Silently proceed; let polling continue rather than fail hard
-      } else if (verification.ok && verification.auditId === audit_id) {
-         isPaymentVerified = true;
-      }
+    if (audit.is_paid) {
+        return NextResponse.json({
+            success: true,
+            ok: true,
+            verified: true,
+            source: 'database',
+            audit: { id: audit.id, is_paid: audit.is_paid, status: audit.status }
+        }, { status: 200 })
     }
 
-    if (!isPaymentVerified) {
-       // Return success: false but do not throw 400, just say it's not verified yet
-       return NextResponse.json({ success: false, is_paid: false });
+    if (!saleId) {
+        return NextResponse.json({
+            success: true,
+            ok: true,
+            verified: false,
+            pending: true
+        }, { status: 200 })
     }
 
-    // Force unlock server-side immediately so the user isn't stuck waiting for the webhook
-    const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.engine_readiness);
+    const verification = await verifySale(saleId);
 
-    const { error: updateError } = await supabaseAdmin
-      .from('audits')
-      .update({
-        is_paid: true,
-        gumroad_sale_id: sale_id || audit.gumroad_sale_id,
-        status: isMissingDeepAudit ? 'payment_verified' : 'ready',
-        payment_verified_at: new Date().toISOString()
-      })
-      .eq('id', audit_id);
-
-    if (updateError) {
-      throw updateError;
+    if (verification.unavailable) {
+        return NextResponse.json({
+            success: true,
+            ok: true,
+            verified: false,
+            pending: true
+        }, { status: 200 })
     }
 
-    if (isMissingDeepAudit) {
-      const { processAudit } = await import('@/lib/audits/processor');
-      const { waitUntil } = await import('@vercel/functions');
-      waitUntil((async () => {
-        try {
-          await processAudit(audit_id);
-        } catch (err) {
-          console.error('[Verify Session] Deep audit generation failed', err);
+    if (verification.ok && verification.auditId === auditId) {
+        const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.engine_readiness);
+        const { error: updateError } = await supabaseAdmin
+            .from('audits')
+            .update({
+                is_paid: true,
+                gumroad_sale_id: saleId || audit.gumroad_sale_id,
+                status: isMissingDeepAudit ? 'payment_verified' : 'ready',
+                payment_verified_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', auditId)
+            .select()
+            .single()
+
+        if (updateError) {
+            console.error('Supabase update error:', updateError);
+            throw updateError;
         }
-      })());
-      return NextResponse.json({ success: true, processing: true, is_paid: true });
-    }
 
-    return NextResponse.json({ success: true, redirect_url: `/results/${audit_id}?paid=true`, is_paid: true });
+        if (isMissingDeepAudit) {
+            const { processAudit } = await import('@/lib/audits/processor');
+            const { waitUntil } = await import('@vercel/functions');
+            waitUntil((async () => {
+                try {
+                await processAudit(auditId);
+                } catch (err) {
+                console.error('[Verify Session] Deep audit generation failed', err);
+                }
+            })());
+            return NextResponse.json({ success: true, ok: true, verified: true, processing: true, is_paid: true, source: 'gumroad' }, { status: 200 });
+        }
+
+        return NextResponse.json({ success: true, ok: true, verified: true, redirect_url: `/results/${auditId}?paid=true`, is_paid: true, source: 'gumroad' }, { status: 200 });
+    } else {
+        return NextResponse.json({
+            success: true,
+            ok: true,
+            verified: false,
+            pending: true
+        }, { status: 200 })
+    }
 
   } catch (error) {
     console.error('[Verify Session Error]', error);

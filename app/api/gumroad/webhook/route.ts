@@ -1,19 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { processAudit } from '@/lib/audits/processor'
 import { waitUntil } from '@vercel/functions'
+import { supabaseAdmin } from "@/lib/supabase-admin"
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const GUMROAD_SELLER_ID = '_awS5EayMAyhC6mFIDzEvw=='
-
-function adminClient() {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Payment service is not configured.')
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 function clean(value: string | null) {
   return (value ?? '').trim().slice(0, 240)
@@ -138,8 +132,7 @@ export async function POST(request: Request) {
       return diagnostic(request, form, 'missing_verified_audit_association')
     }
 
-    const supabase = adminClient()
-    const { data: audit, error: lookupError } = await supabase.from('audits').select('id,status,gumroad_sale_id,is_paid').eq('id', auditId).maybeSingle()
+    const { data: audit, error: lookupError } = await supabaseAdmin.from('audits').select('id,status,gumroad_sale_id,is_paid').eq('id', auditId).maybeSingle()
     if (lookupError || !audit) return NextResponse.json({ error: 'Audit could not be found.' }, { status: 404 })
 
     // Allow 'ready' audits to be upgraded to paid. Only skip if it's already explicitly paid and verified.
@@ -148,7 +141,7 @@ export async function POST(request: Request) {
 
     const gumroadEmail = form.get('email') || null
     const now = new Date().toISOString()
-    const { error } = await supabase.from('audits').update({
+    const { error } = await supabaseAdmin.from('audits').update({
       gumroad_sale_id: saleId,
       gumroad_email: gumroadEmail,
       is_paid: true,
@@ -157,6 +150,9 @@ export async function POST(request: Request) {
       updated_at: now,
     }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing', 'ready'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
+    console.log(`GUMROAD WEBHOOK RECEIVED: ${auditId}`)
+    console.log(`GUMROAD SALE VERIFIED: ${saleId}`)
+    console.log(`GUMROAD AUDIT PAYMENT VERIFIED: ${auditId}`)
 
     // Payment verification is durable before processing begins. Schedule the
     // existing processor after the response; provider failures never roll back
@@ -167,12 +163,13 @@ export async function POST(request: Request) {
         await processAudit(auditId)
       } catch (processingError) {
         console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
-        await supabase.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
+        await supabaseAdmin.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
       }
     })())
     return NextResponse.json({ received: true, processing_started: true }, { status: 200 })
   } catch (error) {
     console.error('[Gumroad Webhook Parse Error]', error)
+    console.log(`GUMROAD WEBHOOK FAILED`)
     return NextResponse.json({ received: true, error: 'parse_failed' }, { status: 200 })
   }
 }
@@ -180,5 +177,3 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({ error: 'Webhook endpoint requires POST.' }, { status: 405 })
 }
-
-// Configure Gumroad Ping to POST form data here. The browser return URL is never proof of payment.

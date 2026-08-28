@@ -1,20 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto'
 import dns from 'node:dns/promises'
 import net from 'node:net'
-import { createClient } from '@supabase/supabase-js'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateText } from 'ai'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
+import { supabaseAdmin } from "@/lib/supabase-admin"
 
 export const runtime = 'nodejs'
-
-function adminClient() {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Audit service is not configured.')
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
+export const dynamic = 'force-dynamic'
 
 function privateIp(address: string) {
   if (net.isIPv4(address)) return /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(address)
@@ -35,10 +29,7 @@ async function normalizeUrl(value: unknown) {
 }
 
 function text(value: unknown, fallback = '') { return typeof value === 'string' ? value.trim().slice(0, 240) : fallback }
-function queriesFor(category: string, location: string, service: string) {
-  const subject = category || 'business'
-  return [...new Set([`best ${subject} in ${location}`, `top ${subject} in ${location}`, `recommended ${subject} in ${location}`, service && `best ${service} in ${location}`, `best ${subject} near ${location}`, `top-rated ${subject} in ${location}`, `where to find ${subject} in ${location}`, `${subject} companies ${location}`].filter(Boolean))]
-}
+
 function scoreAudit(queries: Array<{ results: Array<{ title?: string; link?: string; snippet?: string }> }>, business: string, website: string) {
   const valid = queries.filter((query) => query.results.length)
   if (!valid.length) return null
@@ -98,7 +89,7 @@ function geminiDiagnostic(error: unknown) {
   }
 }
 
-export function extractCleanSearchData(rawSerpApiData: any) {
+export function extractCleanSearchData(rawSerpApiData: any): any {
   if (!rawSerpApiData) return [];
 
   if (Array.isArray(rawSerpApiData)) {
@@ -143,7 +134,7 @@ async function interpretEvidence(evidence: unknown): Promise<Interpretation | nu
         const response = await generateText({
           model: createGoogleGenerativeAI({ apiKey: key })(modelName),
           temperature: 0.2,
-          maxTokens: 8192,
+
           prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
 Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
@@ -198,12 +189,15 @@ export async function POST(request: Request) {
     if (!businessName || !location || !country || !category) return NextResponse.json({ error: 'Business name, location, country, and category are required.' }, { status: 400 })
     const websiteUrl = await normalizeUrl(body?.website ?? body?.url ?? body?.domain)
     const email = text(body?.email, '').toLowerCase() || null
-    const supabase = adminClient()
+
     const accessToken = randomBytes(32).toString('hex')
     const accessTokenHash = createHash('sha256').update(accessToken).digest('hex')
-    const { data: audit, error: insertError } = await supabase.from('audits').insert({ business_name: businessName, website_url: websiteUrl, location, country, category, main_service: mainService || null, email, status: 'processing', access_token_hash: accessTokenHash }).select('id').single()
+    const { data: audit, error: insertError } = await supabaseAdmin.from('audits').insert({ business_name: businessName, website_url: websiteUrl, location, country, category, main_service: mainService || null, email, status: 'processing', access_token_hash: accessTokenHash }).select('id').single()
     if (insertError || !audit) { console.error('[v0] audit insert failed', insertError?.code); return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }
     auditId = audit.id
+    console.log(`AUDIT CREATED: ${auditId}`)
+    console.log(`AUDIT PROCESSING: ${auditId}`)
+
     const key = process.env.SERPAPI_KEY_2
     if (!key) throw new Error('SerpApi is not configured on the server. SERPAPI_KEY is unavailable to the running server process.')
     const queryResults: Array<{ query: string; results: Array<{ title?: string; link?: string; snippet?: string }>; unavailable?: boolean; provider_error?: string }> = []
@@ -230,8 +224,12 @@ export async function POST(request: Request) {
       queryResults.push({ query, results: Array.isArray(data.organic_results) ? data.organic_results.slice(0, 10) as Array<{ title?: string; link?: string; snippet?: string }> : [], unavailable: !response.ok || Boolean(apiError), provider_error: apiError || (!response.ok ? `SerpApi returned HTTP ${response.status}.` : undefined) })
     }
     if (providerFailure && queryResults.every((item) => item.unavailable)) throw new Error(`SerpApi error: ${providerFailure}`)
+    console.log(`AUDIT SERP COMPLETE: ${auditId}`)
+
     const score = scoreAudit(queryResults, businessName, websiteUrl)
     const interpretation = await interpretEvidence({ business_name: businessName, website_url: websiteUrl, location, country, category, main_service: mainService || null, query_results: queryResults })
+    console.log(`AUDIT GEMINI COMPLETE: ${auditId}`)
+
     const findings = {
       business_name: businessName, website_url: websiteUrl, location, country, main_service: mainService || null,
       queries_analyzed: queryResults.length,
@@ -242,12 +240,18 @@ export async function POST(request: Request) {
       ai_interpretation_status: interpretation ? 'available' : 'unavailable',
       note: score === null ? 'Not enough data to calculate a reliable score.' : providerFailure ? 'Some SerpApi queries were unavailable.' : null,
     }
-    const { error: updateError } = await supabase.from('audits').update({ status: 'ready', score, findings, updated_at: new Date().toISOString() }).eq('id', auditId)
+    const { error: updateError } = await supabaseAdmin.from('audits').update({ status: 'ready', score, findings, updated_at: new Date().toISOString() }).eq('id', auditId).select().single()
     if (updateError) throw updateError
+    console.log(`AUDIT READY: ${auditId}`)
     return NextResponse.json({ auditId, accessToken, status: 'ready' })
   } catch (error) {
     console.error('[v0] audit processing failed', error instanceof Error ? error.message : 'unknown')
-    if (auditId) { try { await adminClient().from('audits').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', auditId) } catch {} }
+    if (auditId) {
+        try {
+            await supabaseAdmin.from('audits').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', auditId)
+            console.log(`AUDIT FAILED: ${auditId}`)
+        } catch {}
+    }
     const message = error instanceof Error ? error.message : ''
     const safeError = message.startsWith('Enter') || message.includes('public website') || message.startsWith('SerpApi is not configured') || message.startsWith('SerpApi error:')
       ? message
@@ -258,26 +262,26 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams
-  if (params.get('diagnostic') === 'serpapi') {
-    const key = process.env.SERPAPI_KEY_2
-    return NextResponse.json({ configured: Boolean(key), keyLength: key?.length ?? 0 })
+  const id = params.get('id')
+
+  if (!id) {
+      return NextResponse.json({ error: 'Audit ID required' }, { status: 400 })
   }
-  const id = params.get('id'); const token = params.get('token')
-  if (!id) return NextResponse.json({ error: 'Missing audit ID.' }, { status: 400 })
+
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+      return NextResponse.json({ error: 'Invalid Audit ID format' }, { status: 400 });
+  }
 
   try {
-    const db = adminClient()
-    if (!token) {
-      // Must return full projection of data including 'score' and 'findings' so that users returning from Gumroad
-      // checkout who may have lost their session token in the redirect can still view their paid report.
-      const { data, error } = await db.from('audits').select('id,status,score,is_paid,payment_verified_at,findings,created_at,gumroad_sale_id').eq('id', id).in('status', ['queued', 'payment_verified', 'processing', 'ready', 'completed']).maybeSingle()
-      if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
-      return NextResponse.json(data)
+    // 200 response for any existing audit row, avoiding token leaks unless necessary
+    const { data, error } = await supabaseAdmin.from('audits').select('id,status,score,is_paid,payment_verified_at,findings,created_at,gumroad_sale_id').eq('id', id).maybeSingle()
+    if (error || !data) {
+        return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
     }
-
-    const hash = createHash('sha256').update(token).digest('hex')
-    const { data, error } = await db.from('audits').select('id,status,score,is_paid,payment_verified_at,findings,created_at,gumroad_sale_id').eq('id', id).or(`access_token_hash.eq.${hash},report_access_token_hash.eq.${hash}`).maybeSingle()
-    if (error || !data) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
-    return NextResponse.json(data)
-  } catch { return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 }) }
+    return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+  } catch {
+      return NextResponse.json({ error: 'Audit service is temporarily unavailable.' }, { status: 503 })
+  }
 }
