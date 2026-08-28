@@ -1,36 +1,63 @@
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createHash, randomBytes } from 'node:crypto'
+import { NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export async function POST(req: Request) {
+function clean(value: unknown) {
+  return typeof value === 'string' ? value.trim().slice(0, 240) : ''
+}
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { audit_id } = body;
+    const body = await request.json()
+    const email = clean(body?.email).toLowerCase()
+    const auditIdInput = clean(body?.auditId)
 
-    if (!audit_id) {
-      return NextResponse.json({ success: false, error: 'missing_audit_id' }, { status: 400 });
+    if (!email) {
+      return NextResponse.json({ error: 'Email is required.' }, { status: 400 })
     }
 
-    const { data: audit, error: fetchError } = await supabaseAdmin
-      .from('audits')
-      .select('id,status,is_paid,findings')
-      .eq('id', audit_id)
-      .single();
-
-    if (fetchError || !audit) {
-      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 });
+    if (!auditIdInput) {
+      return NextResponse.json({ error: 'Audit ID is required.' }, { status: 400 })
     }
 
-    if (!audit.is_paid) {
-       return NextResponse.json({ success: true, pending: true });
+    let reportToken = randomBytes(32).toString('hex')
+    let reportTokenHash = createHash('sha256').update(reportToken).digest('hex')
+
+    const { data, error } = await supabaseAdmin.from('audits').update({ email, report_access_token_hash: reportTokenHash }).eq('id', auditIdInput).select('id').single()
+    if (error || !data) return NextResponse.json({ error: 'Audit not found or could not be updated.' }, { status: 404 })
+    const auditId = data.id
+
+    const productUrl = process.env.GUMROAD_PRODUCT_URL_2
+    if (!productUrl) return NextResponse.json({ error: 'Missing required server variable: GUMROAD_PRODUCT_URL_2.', auditId: auditId }, { status: 503 })
+
+    let checkout: URL
+    try {
+      checkout = new URL(productUrl)
+    } catch {
+      return NextResponse.json({ error: 'Configured Gumroad product URL is invalid.', auditId: auditId }, { status: 503 })
     }
 
-    return NextResponse.json({ success: true, pending: false, is_paid: true });
+    if (checkout.pathname.split('/').filter(Boolean).at(-1) !== 'wgudko') return NextResponse.json({ error: 'Configured Gumroad product URL must point to permalink wgudko.', auditId: auditId }, { status: 503 })
 
+    checkout.searchParams.set('wanted', 'true')
+    // Gumroad receives only the opaque audit UUID for correlation. Never place
+    // the report access token in a third-party checkout URL.
+    checkout.searchParams.set('audit_id', auditId)
+    checkout.searchParams.set('email', email)
+    checkout.searchParams.set('return_to', `${new URL(request.url).origin}/buy/complete?audit_id=${encodeURIComponent(auditId)}`)
+
+    const response = NextResponse.json({ checkoutUrl: checkout.toString(), auditId: auditId })
+    response.cookies.set('purchase_access', `${auditId}:${reportToken}`, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 7 })
+    return response
   } catch (error) {
-    console.error('[Gumroad Pending Error]', error);
-    return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 });
+    const message = error instanceof Error && error.message.includes('public') ? error.message : 'Unable to prepare checkout.'
+    return NextResponse.json({ error: message }, { status: 400 })
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ error: 'Use POST to prepare checkout.' }, { status: 405 })
 }
