@@ -2,7 +2,7 @@ import { ContentPage } from '@/components/content-page'
 import { CTA } from '@/components/marketing'
 import { PurchaseForm } from '@/components/purchase-form'
 
-export default async function Buy({ searchParams }: { searchParams: Promise<{ audit_id?: string }> }) {
+export default async function Buy({ searchParams }: { searchParams: Promise<{ auditId?: string }> }) {
   const params = await searchParams
   return (
     <ContentPage eyebrow="Full report" title="Unlock the complete visibility report for $19." intro="One-time payment. No subscription. Add your business details first so Gumroad can return you to the right report after verified payment.">
@@ -16,7 +16,7 @@ export default async function Buy({ searchParams }: { searchParams: Promise<{ au
           <li>Prioritized recommendations and 30-day action plan</li>
           <li>Professional PDF report with email delivery</li>
         </ul>
-        <PurchaseForm auditId={params.audit_id} />
+        <PurchaseForm auditId={params.auditId} />
         <p className="mt-4 text-xs text-primary-foreground/60">Checkout uses the configured Gumroad product. Report access is granted only after server-side sale verification.</p>
       </div>
       <div className="mt-8">
