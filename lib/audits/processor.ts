@@ -163,62 +163,96 @@ export async function processAudit(auditId: string) {
       let attempts = 0;
       while (attempts < 2) {
         try {
-          const freePrompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+          const freePrompt = `You are an expert AI visibility analyst. Review this search evidence and provide a structured JSON diagnostic report.
 Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
   "visibility_score": number (0-100),
-  "summary": string,
-  "brand_presence": "High" | "Medium" | "Low" | "Not Found",
-  "top_competitors": [{"name": string, "domain": string, "strengths": string}],
-  "ai_readiness_breakdown": {
-    "chatgpt_visibility": "Low" | "Medium" | "High",
-    "perplexity_search_rank": "Low" | "Medium" | "High",
-    "google_gemini_presence": "Low" | "Medium" | "High"
+  "summary": string (1-2 sentences),
+  "brand_presence": "Strong" | "Moderate" | "Low" | "Missing",
+  "engine_snapshot": {
+    "chatgpt": { "status": "Strong" | "Moderate" | "Low" | "Missing", "reason": string },
+    "gemini": { "status": "Strong" | "Moderate" | "Low" | "Missing", "reason": string },
+    "perplexity": { "status": "Strong" | "Moderate" | "Low" | "Missing", "reason": string },
+    "google_ai": { "status": "Strong" | "Moderate" | "Low" | "Missing", "reason": string }
   },
-  "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
-}`
-
-          const paidPrompt = `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a comprehensive structured JSON report for a Deep Audit.
-Do not invent information. Follow this JSON schema exactly without markdown formatting:
-{
-  "visibility_score": number (0-100),
-  "presence_level": "High" | "Medium" | "Low" | "Not Found" | "Absent" | "Weak" | "Moderate",
-  "executive_summary": string (2-3 paragraphs),
-  "executive_roi_summary": string (Clear executive breakdown on potential client capture and estimated effort for each 30-day milestone),
-  "engine_readiness": {
-    "chatgpt_search": { "score": number, "status": string, "analysis": string },
-    "perplexity_ai": { "score": number, "status": string, "analysis": string },
-    "google_ai_overview": { "score": number, "status": string, "analysis": string }
-  },
-  "commercial_queries_simulation": [
+  "sample_evidence": [
     {
-      "query": string (Specific high-intent search query that buyers ask AI),
-      "why_competitors_win": string (Why competitors are currently winning this query)
+      "query": string (A high-intent buyer query),
+      "competitor_win": string (Name of competitor appearing),
+      "status": "You Appear" | "Competitor Wins" | "Missing" | "Partial"
     }
-  ],
-  "in_depth_competitors": [
+  ] (Exactly 3 items),
+  "top_competitors": [
     {
       "name": string,
       "domain": string,
-      "visibility_score": number,
-      "why_ai_recommends_them": string,
-      "content_gaps": string
-    }
-  ],
-  "technical_ai_signals": {
-    "schema_markup": string,
-    "entity_disambiguation": string,
-    "sentiment_and_mentions": string
-  },
-  "ready_to_use_schema": string (Pre-generate valid JSON-LD Organization markup tailored to the client's business name, URL, and category),
-  "action_plan_30_days": [
-    {
-      "day_range": string,
-      "priority": "High" | "Medium" | "Low",
-      "action": string,
-      "description": string
+      "winning_search": string,
+      "advantage": string
     }
   ]
+}
+Note: You are inferring AI engine visibility based on source/citation evidence provided in the organic search results, as these engines heavily rely on top organic citations.`
+
+          const paidPrompt = `You are an expert AI visibility analyst. Review this search evidence and provide a comprehensive structured JSON report for a Deep Audit.
+Do not invent information. Use actual data from the evidence. Infer AI engine presence based on the strength and volume of citations and organic rankings.
+Follow this JSON schema exactly without markdown formatting:
+{
+  "visibility_score": number (0-100),
+  "score_breakdown": {
+    "brand_presence": number,
+    "buyer_search_visibility": number,
+    "source_authority": number
+  },
+  "executive_summary": string (Concise strategic summary of overall visibility, strongest/weakest engine, and top fix),
+  "engine_visibility": [
+    {
+      "engine": "ChatGPT" | "Gemini" | "Perplexity" | "Google AI",
+      "status": "Strong" | "Moderate" | "Low" | "Missing",
+      "queries_checked": number,
+      "brand_wins": number,
+      "competitor_wins": number,
+      "strongest_competitor": string,
+      "summary": string,
+      "top_issue": string
+    }
+  ],
+  "evidence_items": [
+    {
+      "query": string,
+      "intent": string,
+      "engine": string (Inferred engine),
+      "your_status": "Found" | "Missing" | "Partial" | "Competitor Wins",
+      "winning_competitor": string,
+      "source": string
+    }
+  ],
+  "competitor_insights": [
+    {
+      "name": string,
+      "domain": string,
+      "winning_queries": [string],
+      "strongest_sources": [string],
+      "advantage_summary": string
+    }
+  ],
+  "technical_signals": [
+    {
+      "label": string (e.g., "Website indexed", "Organization schema", "Third-party mentions"),
+      "status": "Good" | "Needs Work" | "Missing",
+      "explanation": string
+    }
+  ],
+  "action_tasks": [
+    {
+      "timeframe": string (e.g., "Week 1", "Week 2"),
+      "priority": "High" | "Medium" | "Low",
+      "action": string (Specific instruction),
+      "target_location": string (Where to apply it),
+      "why": string (How it affects AI discovery),
+      "expected_impact": string
+    }
+  ],
+  "ready_to_use_schema": string (Pre-generate valid JSON-LD Organization markup tailored to the client's business name and domain)
 }`
 
           const prompt = `${isPaid ? paidPrompt : freePrompt}

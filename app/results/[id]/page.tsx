@@ -13,8 +13,8 @@ type Interpretation = {
   executive_summary?: string;
   executive_roi_summary?: string;
   summary?: string;
-  brand_presence?: "High" | "Medium" | "Low" | "Not Found";
-  top_competitors?: Array<{ name: string; domain: string; strengths: string }>;
+  brand_presence?: "High" | "Medium" | "Low" | "Not Found" | "Strong" | "Missing";
+  top_competitors?: Array<{ name: string; domain: string; strengths?: string; winning_search?: string; advantage?: string; }>;
   commercial_queries_simulation?: Array<{ query: string; why_competitors_win: string }>;
   ai_readiness_breakdown?: { chatgpt_visibility: string; perplexity_search_rank: string; google_gemini_presence: string };
   actionable_recommendations?: Array<{ priority: "High" | "Medium"; action: string; impact: string }>;
@@ -23,13 +23,20 @@ type Interpretation = {
     perplexity_ai: { score: number; status: string; analysis: string };
     google_ai_overview: { score: number; status: string; analysis: string };
   };
-  in_depth_competitors?: Array<{ name: string; domain: string; visibility_score: number; why_ai_recommends_them: string; content_gaps: string }>;
+  in_depth_competitors?: Array<{ name: string; domain: string; visibility_score: number; why_ai_recommends_them?: string; content_gaps?: string; winning_queries?: string[]; strongest_sources?: string[]; advantage_summary?: string }>;
   technical_ai_signals?: { schema_markup: string; entity_disambiguation: string; sentiment_and_mentions: string };
+  technical_signals?: Array<{ label: string; status: "Good" | "Needs Work" | "Missing"; explanation: string }>;
   ready_to_use_schema?: string;
-  action_plan_30_days?: Array<{ day_range: string; priority: "High" | "Medium" | "Low"; action: string; description: string }>;
+  action_plan_30_days?: Array<{ day_range?: string; priority: "High" | "Medium" | "Low"; action: string; description?: string }>;
+  action_tasks?: Array<{ timeframe: string; priority: "High" | "Medium" | "Low"; action: string; target_location?: string; why: string; expected_impact: string }>;
+  engine_snapshot?: { chatgpt: { status: string; reason: string }; gemini: { status: string; reason: string }; perplexity: { status: string; reason: string }; google_ai: { status: string; reason: string } };
+  sample_evidence?: Array<{ query: string; competitor_win: string; status: string }>;
+  competitor_insights?: Array<{ name: string; domain: string; winning_queries: string[]; strongest_sources?: string[]; advantage_summary: string }>;
+  score_breakdown?: { brand_presence: number; buyer_search_visibility: number; source_authority: number };
+  engine_visibility?: Array<{ engine: string; status: string; queries_checked: number; brand_wins: number; competitor_wins: number; strongest_competitor?: string; summary: string; top_issue?: string }>;
+  evidence_items?: Array<{ query: string; intent?: string; engine: string; your_status: string; winning_competitor?: string; source?: string }>;
 }
-type Audit = { is_paid?: boolean | null; gumroad_sale_id?: string | null; payment_verified_at?: string | null; status: string; score: number | null; findings?: { queries_analyzed?: number; query_results?: FindingQuery[]; raw_search_evidence?: FindingQuery[]; note?: string; ai_interpretation?: Interpretation | null; ai_interpretation_status?: 'available' | 'unavailable'; deterministic_score_inputs?: { valid_queries: number; mentions_weight: number; top_result_weight: number; citations_weight: number } } }
-
+type Audit = { is_paid?: boolean | null; gumroad_sale_id?: string | null; payment_verified_at?: string | null; status: string; score: number | null; created_at?: string | null; findings?: { country?: string; queries_analyzed?: number; query_results?: FindingQuery[]; raw_search_evidence?: FindingQuery[]; note?: string; ai_interpretation?: Interpretation | null; ai_interpretation_status?: 'available' | 'unavailable'; deterministic_score_inputs?: { valid_queries: number; mentions_weight: number; top_result_weight: number; citations_weight: number } } }
 export default function ResultsPage() {
   const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
@@ -101,43 +108,177 @@ export default function ResultsPage() {
     google_ai_overview: { score: 0, status: interpretation.ai_readiness_breakdown.google_gemini_presence, analysis: '' },
   } : null)
 
-  const competitors = interpretation.in_depth_competitors || (interpretation.top_competitors ? interpretation.top_competitors.map(c => ({
-    name: c.name, domain: c.domain, visibility_score: 0, why_ai_recommends_them: c.strengths, content_gaps: ''
-  })) : [])
+const competitors = interpretation.competitor_insights || interpretation.in_depth_competitors || interpretation.top_competitors || []
 
-  const actionPlan = interpretation.action_plan_30_days || (interpretation.actionable_recommendations ? interpretation.actionable_recommendations.map(r => ({
+const actionPlan = interpretation.action_tasks || interpretation.action_plan_30_days || (interpretation.actionable_recommendations ? interpretation.actionable_recommendations.map(r => ({
     day_range: 'Ongoing', priority: r.priority, action: r.action, description: r.impact
   })) : [])
 
+
+  const engineSnapshot = interpretation.engine_snapshot || {
+    chatgpt: { status: 'Missing', reason: '' },
+    gemini: { status: 'Missing', reason: '' },
+    perplexity: { status: 'Missing', reason: '' },
+    google_ai: { status: 'Missing', reason: '' }
+  }
+  const evidenceItems = interpretation.evidence_items || interpretation.sample_evidence || []
+
   return <ContentPage eyebrow="AI Audit Report" title="Here is your visibility breakdown." intro="Powered by Multi-Engine AI Brand Intelligence.">
-    <div className="max-w-3xl space-y-5">
-      <div className="rounded-3xl border border-violet-400/40 bg-violet-500/10 p-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-sm text-violet-400 uppercase tracking-widest font-semibold">AI Visibility Score</p>
-            <p className={`mt-2 font-mono text-5xl font-semibold ${scoreColor}`}>{interpretation.visibility_score}<span className="text-2xl text-violet-400/50">/100</span></p>
-          </div>
-          <div className="text-right">
-            <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${presenceColors[brandPresence] || presenceColors["Not Found"]}`}>
+    <div className="max-w-4xl space-y-6">
+
+      {/* Scan Coverage Strip */}
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-muted/40 px-6 py-4 text-xs text-muted-foreground font-mono">
+        <span className="font-semibold text-foreground">Scan Coverage:</span>
+        <span>{findings?.queries_analyzed || evidenceItems.length} buyer searches checked</span>
+        <span>&middot;</span>
+        <span>4 AI engines evaluated</span>
+        {findings?.country && <><span>&middot;</span><span>{findings.country}</span></>}
+        <span>&middot;</span>
+        <span>Completed {new Date(audit.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Score Card */}
+        <div className="rounded-3xl border border-violet-400/40 bg-violet-500/10 p-6 md:col-span-1 flex flex-col justify-center">
+          <p className="text-xs text-violet-500 uppercase tracking-widest font-semibold mb-2">AI Visibility Score</p>
+          <p className={`font-mono text-6xl font-bold ${scoreColor}`}>{interpretation.visibility_score}<span className="text-2xl text-violet-400/50">/100</span></p>
+          <div className="mt-4">
+            <span className={`inline-block px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${presenceColors[brandPresence] || presenceColors["Not Found"]}`}>
               Presence: {brandPresence}
             </span>
           </div>
         </div>
-        <p className="mt-6 leading-7 text-sm">{execSummary}</p>
+
+        {/* Free Summary / Paid Score Breakdown */}
+        <div className="rounded-3xl border border-border bg-card p-6 md:col-span-2">
+          {!isPaid ? (
+            <>
+              <h3 className="font-semibold text-lg mb-3">Diagnostic Summary</h3>
+              <p className="text-sm leading-7 text-muted-foreground">{execSummary}</p>
+            </>
+          ) : (
+            <>
+              <h3 className="font-semibold text-lg mb-4">Score Breakdown</h3>
+              <div className="space-y-5">
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1"><span>Brand Presence</span><span className="font-mono">{interpretation.score_breakdown?.brand_presence ?? 0}%</span></div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${interpretation.score_breakdown?.brand_presence ?? 0}%` }}></div></div>
+                  <p className="text-[10px] text-muted-foreground mt-1">How clearly AI/search systems identify the brand.</p>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1"><span>Buyer Search Visibility</span><span className="font-mono">{interpretation.score_breakdown?.buyer_search_visibility ?? 0}%</span></div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full bg-accent" style={{ width: `${interpretation.score_breakdown?.buyer_search_visibility ?? 0}%` }}></div></div>
+                  <p className="text-[10px] text-muted-foreground mt-1">How often the brand appears for commercial-intent searches.</p>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1"><span>Source Authority Signals</span><span className="font-mono">{interpretation.score_breakdown?.source_authority ?? 0}%</span></div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full bg-violet-500" style={{ width: `${interpretation.score_breakdown?.source_authority ?? 0}%` }}></div></div>
+                  <p className="text-[10px] text-muted-foreground mt-1">Strength of supporting sources, listings, and structured signals.</p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      <section className="rounded-3xl border border-border bg-card p-6">
-        <h3 className="font-semibold mb-4">Competitor Intelligence</h3>
+      {isPaid && interpretation.executive_roi_summary && (
+        <section className="rounded-3xl border border-border bg-card p-6">
+          <h3 className="font-semibold mb-4 text-lg">Executive Summary</h3>
+          <p className="text-sm leading-7 text-muted-foreground whitespace-pre-wrap">{interpretation.executive_roi_summary || execSummary}</p>
+        </section>
+      )}
+
+      {/* Engine Visibility Grid */}
+      <section>
+        <h3 className="font-semibold text-lg mb-4 ml-2">AI Engine Visibility</h3>
         <div className="grid gap-4 sm:grid-cols-2">
-          {competitors.slice(0, isPaid ? competitors.length : 2).map(comp => (
-            <div key={comp.domain} className="p-4 rounded-2xl bg-muted/50">
-              <div className="flex justify-between items-start">
-                <p className="font-semibold text-sm">{comp.name}</p>
-                {isPaid && comp.visibility_score > 0 && <span className="text-xs font-mono bg-background px-2 py-0.5 rounded">{comp.visibility_score}/100</span>}
+          {['ChatGPT', 'Gemini', 'Perplexity', 'Google AI'].map((engine) => {
+            const eKey = engine.toLowerCase().replace(' ', '_') as 'chatgpt' | 'gemini' | 'perplexity' | 'google_ai'
+
+            let status = 'Missing'
+            let contentStr = ''
+
+            if (isPaid && interpretation.engine_visibility) {
+              const engData = interpretation.engine_visibility.find(e => e.engine === engine)
+              status = engData?.status || 'Missing'
+              contentStr = engData?.summary || ''
+            } else {
+              const engData = engineSnapshot[eKey]
+              status = engData?.status || 'Missing'
+              contentStr = engData?.reason || ''
+            }
+
+            const colorClass = status === 'Strong' ? 'bg-green-500/10 text-green-600 border-green-500/20' : status === 'Moderate' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' : status === 'Low' ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'
+
+            return (
+              <div key={engine} className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <p className="font-bold">{engine}</p>
+                  <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${colorClass}`}>{status}</span>
+                </div>
+                <p className="text-sm text-muted-foreground leading-6">{contentStr || `Evaluating source visibility and citation probability across ${engine}.`}</p>
+                {!isPaid && <p className="text-[10px] font-mono text-muted-foreground/60 mt-4 uppercase tracking-widest">Inferred Signals</p>}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 font-mono">{comp.domain}</p>
-              <p className="mt-3 text-xs leading-5"><span className="font-medium text-foreground">Why AI Recommends Them:</span> {comp.why_ai_recommends_them}</p>
-              {isPaid && comp.content_gaps && <p className="mt-2 text-xs leading-5"><span className="font-medium text-foreground">Content Gaps:</span> {comp.content_gaps}</p>}
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Buyer Search Evidence */}
+      <section className="rounded-3xl border border-border bg-card overflow-hidden">
+        <div className="p-6 border-b border-border">
+          <h3 className="font-semibold text-lg">Searches That Decide Who Gets Recommended</h3>
+          <p className="text-sm text-muted-foreground mt-1">Sample of high-intent buyer searches analyzed.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Buyer Search</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
+                <th className="px-6 py-4 font-semibold">Competitor</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {(evidenceItems).map((ev: any, i: number) => {
+                const isWin = ev.status === 'You Appear' || ev.your_status === 'Found'
+                const isLoss = ev.status === 'Competitor Wins' || ev.your_status === 'Competitor Wins' || ev.your_status === 'Missing'
+                return (
+                  <tr key={i} className="bg-card">
+                    <td className="px-6 py-4 font-medium max-w-[250px] truncate" title={ev.query}>"{ev.query}"</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isWin ? 'bg-green-500/10 text-green-600' : isLoss ? 'bg-red-500/10 text-red-600' : 'bg-yellow-500/10 text-yellow-600'}`}>
+                        {ev.your_status || ev.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground truncate max-w-[200px]">{ev.winning_competitor || ev.competitor_win || '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-border bg-card p-6">
+        <h3 className="font-semibold mb-4 text-lg">Competitor Intelligence</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {competitors.slice(0, isPaid ? competitors.length : 2).map((comp: any) => (
+            <div key={comp.domain} className="p-5 rounded-2xl bg-muted/40 border border-border/50">
+              <div className="flex justify-between items-start">
+                <p className="font-bold">{comp.name}</p>
+                {isPaid && comp.visibility_score > 0 && <span className="text-[10px] font-mono font-bold bg-background border px-2 py-0.5 rounded">{comp.visibility_score}/100</span>}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 font-mono mb-4">{comp.domain}</p>
+
+              {isPaid && comp.winning_queries && comp.winning_queries.length > 0 && (
+                <div className="mb-3">
+                   <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1">Winning Searches</p>
+                   <ul className="text-xs space-y-1">{comp.winning_queries.slice(0,2).map((q: string) => <li key={q} className="truncate">"{q}"</li>)}</ul>
+                </div>
+              )}
+
+              <p className="text-xs leading-5"><span className="font-semibold text-foreground">AI Advantage:</span> {comp.advantage_summary || comp.advantage || comp.why_ai_recommends_them}</p>
             </div>
           ))}
           {competitors.length === 0 && <p className="text-sm text-muted-foreground">No prominent competitors identified in top results.</p>}
@@ -145,34 +286,27 @@ export default function ResultsPage() {
       </section>
 
       {!isPaid ? (
-        <div className="relative mt-8 overflow-hidden rounded-3xl border border-border bg-card p-8 text-center">
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/90 z-10 pointer-events-none" />
-          <h3 className="font-semibold relative z-20 text-xl">Unlock the Full Action Plan</h3>
-          <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto relative z-20">Get the complete AI Readiness Breakdown (ChatGPT & Perplexity metrics) and a step-by-step checklist of actionable recommendations to dominate your niche.</p>
-          <div className="mt-6 relative z-20 flex justify-center" onClick={() => { if (typeof window !== 'undefined' && params.id) localStorage.setItem('last_audit_id', String(params.id)) }}>
-            <CTA href={`/buy?auditId=${params.id}`}>Get Full Report — $19 →</CTA>
+        <div className="relative mt-12 overflow-hidden rounded-[2rem] border border-primary/20 bg-primary/5 p-8 text-center sm:p-12">
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/50 z-10 pointer-events-none" />
+          <h3 className="font-semibold relative z-20 text-2xl tracking-tight">Your full AI visibility gap is ready</h3>
+          <p className="text-sm text-muted-foreground mt-3 max-w-lg mx-auto relative z-20 leading-relaxed">See every buyer search we analyzed, which competitors are winning, your true visibility across AI engines, and the exact actions that can improve your presence.</p>
+          <div className="mt-8 relative z-20 flex flex-col items-center justify-center gap-3" onClick={() => { if (typeof window !== 'undefined' && params.id) localStorage.setItem('last_audit_id', String(params.id)) }}>
+            <CTA href={`/buy?auditId=${params.id}`}>Unlock Full AI Visibility Report — $19</CTA>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">One-time payment. Instant access.</span>
           </div>
 
-          <div className="opacity-20 mt-8 space-y-4 blur-[2px]">
-            <div className="h-24 bg-muted rounded-xl w-full" />
-            <div className="h-32 bg-muted rounded-xl w-full" />
+          <div className="opacity-20 mt-12 space-y-6 blur-[3px] select-none pointer-events-none">
+            <div className="h-32 bg-muted rounded-2xl w-full border border-border" />
+            <div className="h-48 bg-muted rounded-2xl w-full border border-border" />
           </div>
         </div>
       ) : (
         <>
-
-          {interpretation.executive_roi_summary && (
-            <section className="rounded-3xl border border-border bg-card p-6">
-              <h3 className="font-semibold mb-4">Executive ROI Summary</h3>
-              <p className="text-sm leading-7 text-muted-foreground">{interpretation.executive_roi_summary}</p>
-            </section>
-          )}
-
           {interpretation.commercial_queries_simulation && interpretation.commercial_queries_simulation.length > 0 && (
             <section className="rounded-3xl border border-border bg-card p-6">
-              <h3 className="font-semibold mb-4">Commercial Queries Simulation</h3>
+              <h3 className="font-semibold mb-4 text-lg">Commercial Queries Simulation</h3>
               <div className="space-y-4">
-                {interpretation.commercial_queries_simulation.map((sim, i) => (
+                {interpretation.commercial_queries_simulation.map((sim: any, i: number) => (
                   <div key={i} className="p-4 rounded-2xl bg-muted/30 border border-muted">
                     <p className="font-mono text-sm font-semibold mb-2">"{sim.query}"</p>
                     <p className="text-sm text-muted-foreground leading-6"><span className="font-medium text-foreground">Why Competitors Win:</span> {sim.why_competitors_win}</p>
@@ -182,60 +316,30 @@ export default function ResultsPage() {
             </section>
           )}
 
-          {engineBreakdown && (
+          {interpretation.technical_signals && interpretation.technical_signals.length > 0 && (
             <section className="rounded-3xl border border-border bg-card p-6">
-              <h3 className="font-semibold mb-4">Engine Breakdown Grid</h3>
-              <div className="space-y-6 divide-y divide-border">
-                <div className="pt-4 first:pt-0">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">ChatGPT Search</p>
-                    <span className={`text-xs px-2 py-0.5 rounded font-semibold ${presenceColors[engineBreakdown.chatgpt_search.status] || presenceColors["Not Found"]}`}>{engineBreakdown.chatgpt_search.status}</span>
-                  </div>
-                  <p className="text-sm leading-6">{engineBreakdown.chatgpt_search.analysis}</p>
-                </div>
-                <div className="pt-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Perplexity AI</p>
-                    <span className={`text-xs px-2 py-0.5 rounded font-semibold ${presenceColors[engineBreakdown.perplexity_ai.status] || presenceColors["Not Found"]}`}>{engineBreakdown.perplexity_ai.status}</span>
-                  </div>
-                  <p className="text-sm leading-6">{engineBreakdown.perplexity_ai.analysis}</p>
-                </div>
-                <div className="pt-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Google AI Overviews</p>
-                    <span className={`text-xs px-2 py-0.5 rounded font-semibold ${presenceColors[engineBreakdown.google_ai_overview.status] || presenceColors["Not Found"]}`}>{engineBreakdown.google_ai_overview.status}</span>
-                  </div>
-                  <p className="text-sm leading-6">{engineBreakdown.google_ai_overview.analysis}</p>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {interpretation.technical_ai_signals && (
-            <section className="rounded-3xl border border-border bg-card p-6">
-              <h3 className="font-semibold mb-4">Technical AI Signals</h3>
+              <h3 className="font-semibold mb-4 text-lg">Technical Visibility Signals</h3>
               <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-1">Schema Markup</p>
-                  <p className="text-sm leading-6">{interpretation.technical_ai_signals.schema_markup}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-1">Entity Disambiguation</p>
-                  <p className="text-sm leading-6">{interpretation.technical_ai_signals.entity_disambiguation}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-1">Sentiment & Mentions</p>
-                  <p className="text-sm leading-6">{interpretation.technical_ai_signals.sentiment_and_mentions}</p>
-                </div>
+                {interpretation.technical_signals.map((sig: any, i: number) => {
+                  const color = sig.status === 'Good' ? 'text-green-600 bg-green-500/10' : sig.status === 'Missing' ? 'text-red-600 bg-red-500/10' : 'text-yellow-600 bg-yellow-500/10'
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${color}`}>{sig.status}</span>
+                        <p className="text-sm font-semibold">{sig.label}</p>
+                      </div>
+                      <p className="text-sm leading-6 text-muted-foreground">{sig.explanation}</p>
+                    </div>
+                  )
+                })}
               </div>
             </section>
           )}
-
 
           {interpretation.ready_to_use_schema && (
             <section className="rounded-3xl border border-border bg-card p-6">
-              <h3 className="font-semibold mb-4">Ready-to-Use Schema Markup</h3>
-              <p className="text-xs text-muted-foreground mb-4">Inject this JSON-LD script into your website's &lt;head&gt; to improve entity recognition.</p>
+              <h3 className="font-semibold mb-4 text-lg">Ready-to-Use Schema Markup</h3>
+              <p className="text-xs text-muted-foreground mb-4">Inject this JSON-LD script into your website's &lt;head&gt; to improve entity recognition across AI search systems.</p>
               <pre className="p-4 rounded-xl bg-primary text-primary-foreground text-xs overflow-x-auto font-mono whitespace-pre-wrap">
                 {interpretation.ready_to_use_schema}
               </pre>
@@ -243,20 +347,22 @@ export default function ResultsPage() {
           )}
 
           <section className="rounded-3xl border border-border bg-card p-6">
-            <h3 className="font-semibold mb-4">30-Day Implementation Checklist</h3>
+            <h3 className="font-semibold mb-4 text-lg">30-Day Implementation Checklist</h3>
             {actionPlan.length > 0 ? (
               <div className="space-y-4">
-                {actionPlan.map((rec, i) => (
-                  <div key={i} className="flex gap-4 p-4 rounded-2xl bg-muted/30 border border-muted">
-                    <div className="shrink-0 mt-0.5 w-20">
-                      <p className="text-xs font-semibold text-muted-foreground">{rec.day_range}</p>
-                      <span className={`inline-block mt-1 px-2 py-0.5 text-[10px] uppercase font-bold rounded ${rec.priority === 'High' ? 'bg-red-500/20 text-red-400' : rec.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                {actionPlan.map((rec: any, i: number) => (
+                  <div key={i} className="flex flex-col sm:flex-row gap-4 p-5 rounded-2xl bg-muted/30 border border-muted">
+                    <div className="shrink-0 sm:w-28 flex sm:flex-col gap-3 sm:gap-1 items-center sm:items-start">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{rec.timeframe || rec.day_range}</p>
+                      <span className={`inline-block px-2 py-0.5 text-[10px] uppercase font-bold rounded ${rec.priority === 'High' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : rec.priority === 'Medium' ? 'bg-yellow-500/10 text-yellow-600 border border-yellow-500/20' : 'bg-gray-500/10 text-gray-500 border border-gray-500/20'}`}>
                         {rec.priority}
                       </span>
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{rec.action}</p>
-                      <p className="text-xs text-muted-foreground mt-1 leading-5">{rec.description}</p>
+                      <p className="text-sm font-bold">{rec.action}</p>
+                      {rec.target_location && <p className="text-[10px] font-mono text-muted-foreground mt-2">📍 {rec.target_location}</p>}
+                      <p className="text-sm text-muted-foreground mt-2 leading-6"><span className="font-medium text-foreground">Why:</span> {rec.why || rec.description}</p>
+                      {rec.expected_impact && <p className="text-sm text-muted-foreground mt-1 leading-6"><span className="font-medium text-foreground">Impact:</span> {rec.expected_impact}</p>}
                     </div>
                   </div>
                 ))}
@@ -266,10 +372,10 @@ export default function ResultsPage() {
             )}
           </section>
 
-          <div className="mt-8 flex justify-center print-hide gap-4">
+          <div className="mt-12 flex justify-center print-hide gap-4">
             <button
               onClick={() => window.print()}
-              className="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground hover:-translate-y-0.5 transition-transform"
+              className="rounded-full bg-accent px-8 py-4 text-sm font-bold text-accent-foreground hover:-translate-y-0.5 transition-transform"
             >
               Download PDF Report
             </button>
