@@ -33,11 +33,24 @@ export default function ResultsPage() {
   const [audit, setAudit] = useState<Audit | null>(null)
   const [error, setError] = useState('')
 
+
   useEffect(() => {
     const token = searchParams.get('token')
+    const paidParam = searchParams.get('paid') === 'true'
     let active = true
     let timer: number | undefined
+
+    // Proactively notify backend if we returned from Gumroad
+    if (paidParam && params.id) {
+      fetch('/api/gumroad/verify-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auditId: params.id })
+      }).catch(console.error)
+    }
+
     const poll = async () => {
+
       try {
         const fetchUrl = token ? `/api/audits?id=${encodeURIComponent(params.id)}&token=${encodeURIComponent(token)}` : `/api/audits?id=${encodeURIComponent(params.id)}`
         const response = await fetch(fetchUrl, { cache: 'no-store' })
@@ -53,7 +66,7 @@ export default function ResultsPage() {
   }, [params.id, searchParams])
 
 
-  const isPaid = Boolean(audit?.is_paid || audit?.gumroad_sale_id || audit?.payment_verified_at || audit?.status === 'payment_verified')
+  const isPaid = Boolean(audit?.is_paid || audit?.gumroad_sale_id || audit?.payment_verified_at || audit?.status === 'payment_verified' || searchParams.get('paid') === 'true')
   const isUpgrading = isPaid && audit?.findings?.ai_interpretation && !('engine_readiness' in audit.findings.ai_interpretation) && !('in_depth_competitors' in audit.findings.ai_interpretation)
 
   if (error) return <ContentPage eyebrow="Audit failed" title="We could not load this audit." intro={error}><CTA href="/check">Try another audit</CTA></ContentPage>
