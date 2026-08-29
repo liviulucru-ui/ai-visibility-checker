@@ -18,10 +18,10 @@ export function SiteNav() {
     <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8">
       <Link href="/" className="flex items-center gap-2 font-mono text-sm font-bold tracking-tight"><span className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"><Sparkles className="size-4" /></span>visibility<span className="text-muted-foreground">.check</span></Link>
       <nav className="hidden items-center gap-7 text-sm text-muted-foreground lg:flex">{navItems.map(([label, href]) => <Link key={href} href={href} className="transition-colors hover:text-foreground">{label}</Link>)}</nav>
-      <Link href="/buy" className="hidden rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 sm:block">Get Report</Link>
+      <Link href="/check" className="hidden rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 sm:block">Free Audit</Link>
       <button aria-label="Toggle menu" className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
     </header>
-    {open && <nav className="mx-5 flex flex-col gap-4 border-t border-border py-5 text-sm lg:hidden">{navItems.map(([label, href]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href="/buy" onClick={() => setOpen(false)} className="font-semibold">Get Full Report — $19</Link></nav>}
+    {open && <nav className="mx-5 flex flex-col gap-4 border-t border-border py-5 text-sm lg:hidden">{navItems.map(([label, href]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href="/check" onClick={() => setOpen(false)} className="font-semibold">Free Audit</Link></nav>}
   </>
 }
 
