@@ -52,12 +52,16 @@ export default function ResultsPage() {
     return () => { active = false; if (timer) window.clearTimeout(timer) }
   }, [params.id, searchParams])
 
+
+  const isPaid = Boolean(audit?.is_paid || audit?.gumroad_sale_id || audit?.payment_verified_at || audit?.status === 'payment_verified')
+  const isUpgrading = isPaid && audit?.findings?.ai_interpretation && !('engine_readiness' in audit.findings.ai_interpretation) && !('in_depth_competitors' in audit.findings.ai_interpretation)
+
   if (error) return <ContentPage eyebrow="Audit failed" title="We could not load this audit." intro={error}><CTA href="/check">Try another audit</CTA></ContentPage>
-  if (!audit || audit.status === 'processing' || audit.status === 'queued') return <ContentPage eyebrow="Audit in progress" title="Preparing your audit..." intro="Generating relevant searches, checking search visibility, analyzing competitors, and preparing your results. This page will update automatically." />
+  if (!audit || audit.status === 'processing' || audit.status === 'queued' || isUpgrading) return <ContentPage eyebrow="Audit in progress" title={isUpgrading ? "Upgrading to deep audit..." : "Preparing your audit..."} intro="Generating relevant searches, checking search visibility, analyzing competitors, and preparing your results. This page will update automatically." />
   if (audit.status === 'failed') return <ContentPage eyebrow="Audit failed" title="The audit could not be completed." intro="No results were generated. Check the configuration and try again."><CTA href="/check">Try another audit</CTA></ContentPage>
 
-  const isPaid = Boolean(audit.is_paid || audit.gumroad_sale_id || audit.payment_verified_at)
   const findings = audit.findings
+
   const interpretation = findings?.ai_interpretation as Interpretation | null | undefined
   const scoreInputs = findings?.deterministic_score_inputs
 
