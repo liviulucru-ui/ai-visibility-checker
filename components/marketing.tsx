@@ -14,14 +14,17 @@ export const navItems = [
 
 export function SiteNav() {
   const [open, setOpen] = useState(false)
+  const isHome = typeof window !== 'undefined' && window.location.pathname === '/'
+  const ctaHref = isHome ? '#audit-form' : '/check'
+
   return <>
     <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8">
-      <Link href="/" className="flex items-center gap-2 font-mono text-sm font-bold tracking-tight"><span className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"><Sparkles className="size-4" /></span>visibility<span className="text-muted-foreground">.check</span></Link>
+      <Link href="/" className="flex items-center gap-2 font-mono text-sm font-bold tracking-tight"><span className="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"><Sparkles className="size-4" /></span>AIBrand<span className="text-muted-foreground">Check</span></Link>
       <nav className="hidden items-center gap-7 text-sm text-muted-foreground lg:flex">{navItems.map(([label, href]) => <Link key={href} href={href} className="transition-colors hover:text-foreground">{label}</Link>)}</nav>
-      <Link href="/check" className="hidden rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 sm:block">Free Audit</Link>
+      <Link href={ctaHref} className="hidden rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 sm:block">Free Audit</Link>
       <button aria-label="Toggle menu" className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
     </header>
-    {open && <nav className="mx-5 flex flex-col gap-4 border-t border-border py-5 text-sm lg:hidden">{navItems.map(([label, href]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href="/check" onClick={() => setOpen(false)} className="font-semibold">Free Audit</Link></nav>}
+    {open && <nav className="mx-5 flex flex-col gap-4 border-t border-border py-5 text-sm lg:hidden">{navItems.map(([label, href]) => <Link key={href} href={href} onClick={() => setOpen(false)}>{label}</Link>)}<Link href={ctaHref} onClick={() => setOpen(false)} className="font-semibold">Free Audit</Link></nav>}
   </>
 }
 
@@ -40,6 +43,6 @@ export function ReportPreview({ large = false }: { large?: boolean }) {
 
 export function FAQList({ items }: { items: [string, string][] }) { const [active, setActive] = useState<number | null>(0); return <div className="divide-y divide-border border-y border-border">{items.map(([q,a], i) => <div key={q} className="py-5"><button className="flex w-full items-center justify-between text-left font-semibold" onClick={() => setActive(active === i ? null : i)}>{q}<ChevronDown className={`size-4 transition-transform ${active === i ? 'rotate-180' : ''}`} /></button>{active === i && <p className="max-w-2xl pt-3 text-sm leading-6 text-muted-foreground">{a}</p>}</div>)}</div> }
 
-export function Shell({ children }: { children: React.ReactNode }) { return <main className="min-h-screen overflow-hidden bg-background text-foreground"><div className="border-b border-border bg-primary py-2 text-center text-xs font-medium tracking-wide text-primary-foreground">Your customers are already asking AI what to buy.</div><SiteNav />{children}<footer className="border-t border-border"><div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between lg:px-8"><p className="font-mono font-bold text-foreground">visibility.check</p><p>AI-powered search visibility for commercial decisions.</p><p>© 2026 Visibility Check</p></div></footer><Link href="/check" className="fixed inset-x-4 bottom-4 z-20 flex items-center justify-center rounded-full bg-primary px-5 py-3.5 text-sm font-semibold text-primary-foreground shadow-xl sm:hidden">Check My AI Visibility — Free</Link></main> }
+export function Shell({ children }: { children: React.ReactNode }) { return <main className="min-h-screen overflow-hidden bg-background text-foreground"><div className="border-b border-border bg-primary py-2 text-center text-xs font-medium tracking-wide text-primary-foreground">Your customers are already asking AI what to buy.</div><SiteNav />{children}<footer className="border-t border-border"><div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between lg:px-8"><p className="font-mono font-bold text-foreground">AIBrandCheck</p><p>AI-powered search visibility for commercial decisions.</p><p>© 2026 AIBrandCheck</p></div></footer><Link href="/check" className="fixed inset-x-4 bottom-4 z-20 flex items-center justify-center rounded-full bg-primary px-5 py-3.5 text-sm font-semibold text-primary-foreground shadow-xl sm:hidden">Check My AI Visibility — Free</Link></main> }
 
 export const CheckIcon = () => <Check className="mt-0.5 size-4 shrink-0 text-accent-foreground" />
