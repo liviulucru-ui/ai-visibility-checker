@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
@@ -13,17 +14,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, status: 'missing_params', ready: false }, { status: 200 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('[Gumroad Status] Missing Supabase credentials in environment');
-      return NextResponse.json({ success: false, status: 'config_error', ready: false }, { status: 200 });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    let query = supabase.from('audits').select('*');
+    let query = supabaseAdmin.from('audits').select('*');
     if (auditId) {
       query = query.eq('id', auditId);
     } else if (saleId) {
@@ -55,7 +46,7 @@ export async function GET(req: Request) {
       waitUntil((async () => {
         try {
           if (isMissingDeepAudit && audit.status === 'ready') {
-             await supabase.from('audits').update({ status: 'payment_verified' }).eq('id', audit.id)
+             await supabaseAdmin.from('audits').update({ status: 'payment_verified' }).eq('id', audit.id)
           }
           await processAudit(audit.id)
         } catch (processingError) {
@@ -72,7 +63,7 @@ export async function GET(req: Request) {
       }, { status: 200 });
     }
 
-    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings);
+    const isReady = audit.status === 'ready' || audit.status === 'completed' || Boolean(audit.findings) || audit.status === 'payment_verified';
 
     if (isReady) {
       return NextResponse.json({

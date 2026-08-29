@@ -1,132 +1,573 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Re-add verifySale as a strict security measure
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function normalizeEmail(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function expectedPermalink() {
-  const productCandidates = [process.env.GUMROAD_PRODUCT_URL_2].filter((value): value is string => Boolean(value))
-  for (const productUrl of productCandidates) {
-    try {
-      const permalink = new URL(productUrl).pathname.split('/').filter(Boolean).at(-1)
-      if (permalink === 'wgudko') return permalink
-    } catch {
-      continue
+  const productUrl = process.env.GUMROAD_PRODUCT_URL_2;
+
+  if (!productUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(productUrl).pathname
+      .split("/")
+      .filter(Boolean)
+      .at(-1) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function extractAuditIdFromSale(sale: any): string | null {
+  const customFields =
+    sale?.custom_fields ??
+    sale?.custom_fields_values ??
+    {};
+
+  if (customFields && typeof customFields === "object") {
+    const direct =
+      customFields.audit_id ??
+      customFields.auditId ??
+      customFields["Audit ID"];
+
+    if (typeof direct === "string") {
+      return direct;
+    }
+
+    if (Array.isArray(customFields)) {
+      for (const field of customFields) {
+        const name = String(
+          field?.name ??
+            field?.label ??
+            field?.key ??
+            "",
+        ).toLowerCase();
+
+        if (
+          name === "audit_id" ||
+          name === "audit id"
+        ) {
+          const value = String(
+            field?.value ?? "",
+          ).trim();
+
+          if (value) {
+            return value;
+          }
+        }
+      }
     }
   }
-  return null
+
+  const fallback =
+    sale?.audit_id ??
+    sale?.auditId;
+
+  return typeof fallback === "string"
+    ? fallback
+    : null;
 }
 
 async function verifySale(saleId: string) {
-  const accessToken = process.env.GUMROAD_ACCESS_TOKEN_2
-  if (!accessToken) return { ok: false, unavailable: true as const }
-  const response = await fetch(`https://api.gumroad.com/v2/sales/${encodeURIComponent(saleId)}?access_token=${encodeURIComponent(accessToken)}`, { cache: 'no-store' })
-  if (!response.ok) return { ok: false, unavailable: false as const }
-  const payload = await response.json().catch(() => null)
-  const sale = payload?.sale ?? payload
-  const permalink = sale?.product?.permalink ?? sale?.product_permalink ?? sale?.permalink
-  const currency = String(sale?.currency ?? sale?.currency_type ?? '').toUpperCase()
-  const price = Number(sale?.price)
-  const expected = expectedPermalink()
-  const customFields = sale?.custom_fields ?? sale?.custom_fields_values ?? {}
-  const verifiedAuditId = customFields.audit_id ?? customFields.auditId ?? sale?.audit_id
-  return {
-    ok: Boolean(
-      sale?.id === saleId &&
-      !sale?.refunded &&
-      (!expected || permalink === expected) &&
-      price === 1900 &&
-      currency === 'USD'
-    ),
-    unavailable: false as const,
-    auditId: typeof verifiedAuditId === 'string' ? verifiedAuditId : null,
+  const accessToken =
+    process.env.GUMROAD_ACCESS_TOKEN_2;
+
+  if (!accessToken) {
+    return {
+      ok: false,
+      unavailable: true as const,
+      sale: null,
+      auditId: null,
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.gumroad.com/v2/sales/${encodeURIComponent(
+        saleId,
+      )}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        unavailable:
+          response.status >= 500 ||
+          response.status === 429,
+        sale: null,
+        auditId: null,
+      };
+    }
+
+    const payload = await response
+      .json()
+      .catch(() => null);
+
+    if (!payload) {
+      return {
+        ok: false,
+        unavailable: true as const,
+        sale: null,
+        auditId: null,
+      };
+    }
+
+    const sale =
+      payload?.sale ??
+      payload?.purchase ??
+      payload;
+
+    const returnedSaleId = String(
+      sale?.id ??
+        sale?.sale_id ??
+        "",
+    );
+
+    const permalink =
+      sale?.product?.permalink ??
+      sale?.product_permalink ??
+      sale?.permalink ??
+      null;
+
+    const currency = String(
+      sale?.currency ??
+        sale?.currency_type ??
+        "",
+    ).toUpperCase();
+
+    const rawPrice =
+      sale?.price ??
+      sale?.price_cents ??
+      null;
+
+    const price =
+      rawPrice === null ||
+      rawPrice === undefined
+        ? null
+        : Number(rawPrice);
+
+    const expected = expectedPermalink();
+
+    const auditId =
+      extractAuditIdFromSale(sale);
+
+    const refunded =
+      sale?.refunded === true;
+
+    const disputed =
+      sale?.disputed === true;
+
+    const chargebacked =
+      sale?.chargebacked === true;
+
+    const expectedProductId =
+      process.env.GUMROAD_PRODUCT_ID;
+
+    const productId =
+      sale?.product_id ??
+      sale?.product?.id ??
+      null;
+
+    const productMatches =
+      !expectedProductId ||
+      !productId ||
+      productId === expectedProductId;
+
+    const permalinkMatches =
+      !expected ||
+      !permalink ||
+      permalink === expected;
+
+    const saleIdMatches =
+      returnedSaleId === saleId;
+
+    const currencyMatches =
+      !currency ||
+      currency === "USD";
+
+    /*
+     * Price validation:
+     * Gumroad commonly reports price in cents.
+     * If price is present, require $19.
+     */
+    const priceMatches =
+      price === null ||
+      price === 1900 ||
+      price === 19;
+
+    const ok =
+      saleIdMatches &&
+      !refunded &&
+      !disputed &&
+      !chargebacked &&
+      productMatches &&
+      permalinkMatches &&
+      currencyMatches &&
+      priceMatches;
+
+    return {
+      ok,
+      unavailable: false as const,
+      sale,
+      auditId,
+    };
+  } catch (error) {
+    console.error(
+      "[Verify Session] Gumroad verification error",
+      error instanceof Error
+        ? error.message
+        : error,
+    );
+
+    return {
+      ok: false,
+      unavailable: true as const,
+      sale: null,
+      auditId: null,
+    };
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { audit_id, sale_id } = body;
+    const body = await req
+      .json()
+      .catch(() => ({}));
 
-    if (!audit_id) {
-      return NextResponse.json({ success: false, error: 'missing_audit_id' }, { status: 400 });
+    const auditId = String(
+      body?.audit_id ??
+        body?.auditId ??
+        "",
+    ).trim();
+
+    const saleId = String(
+      body?.sale_id ??
+        body?.saleId ??
+        "",
+    ).trim();
+
+    if (!auditId) {
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          error: "missing_audit_id",
+        },
+        { status: 400 },
+      );
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('[Verify Session] Missing Supabase credentials');
-      return NextResponse.json({ success: false, error: 'config_error' }, { status: 500 });
+    if (!isUuid(auditId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          error: "invalid_audit_id",
+        },
+        { status: 400 },
+      );
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+    /*
+     * Load by UUID using admin client.
+     * No RLS, no token hash filters.
+     */
+    const { data: audit, error: fetchError } =
+      await supabaseAdmin
+        .from("audits")
+        .select(
+          `
+          id,
+          email,
+          status,
+          is_paid,
+          findings,
+          gumroad_sale_id,
+          payment_verified_at
+        `,
+        )
+        .eq("id", auditId)
+        .maybeSingle();
 
-    const { data: audit, error: fetchError } = await supabaseAdmin
-      .from('audits')
-      .select('id,status,is_paid,findings,gumroad_sale_id')
-      .eq('id', audit_id)
-      .single();
+    if (fetchError) {
+      console.error(
+        "[Verify Session] Supabase fetch error",
+        fetchError.message,
+      );
 
-    if (fetchError || !audit) {
-      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 });
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          error: "database_error",
+        },
+        { status: 503 },
+      );
     }
 
-    // A better approach to secure the endpoint without relying on sale_id from the client
-    // is to have the server check the database for verified payments associated with the audit_id.
-    // If the audit is already marked as paid (e.g. by the webhook), we can safely unlock the session.
-    let isPaymentVerified = audit.is_paid;
-
-    // If it's not already verified and we have a sale_id from the client, try to verify it with Gumroad
-    if (!isPaymentVerified && sale_id) {
-      const verification = await verifySale(sale_id);
-
-      if (verification.unavailable) {
-         // Silently proceed; let polling continue rather than fail hard
-      } else if (verification.ok && verification.auditId === audit_id) {
-         isPaymentVerified = true;
-      }
+    if (!audit) {
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          error: "not_found",
+        },
+        { status: 404 },
+      );
     }
 
-    if (!isPaymentVerified) {
-       // Return success: false but do not throw 400, just say it's not verified yet
-       return NextResponse.json({ success: false, is_paid: false });
+    /*
+     * Already verified by webhook or earlier request.
+     */
+    if (audit.is_paid) {
+      return NextResponse.json(
+        {
+          success: true,
+          ok: true,
+          verified: true,
+          source: "database",
+          audit: {
+            id: audit.id,
+            is_paid: true,
+            status: audit.status,
+            payment_verified_at:
+              audit.payment_verified_at,
+          },
+        },
+        { status: 200 },
+      );
     }
 
-    // Force unlock server-side immediately so the user isn't stuck waiting for the webhook
-    const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.engine_readiness);
+    /*
+     * Existing audit + no saleId = pending,
+     * never false 404.
+     */
+    if (!saleId) {
+      return NextResponse.json(
+        {
+          success: true,
+          ok: true,
+          verified: false,
+          pending: true,
+          audit: {
+            id: audit.id,
+            status: audit.status,
+            is_paid: false,
+          },
+        },
+        { status: 200 },
+      );
+    }
 
-    const { error: updateError } = await supabaseAdmin
-      .from('audits')
-      .update({
+    const verification =
+      await verifySale(saleId);
+
+    /*
+     * Temporary Gumroad unavailability:
+     * existing audit remains pending.
+     */
+    if (verification.unavailable) {
+      return NextResponse.json(
+        {
+          success: true,
+          ok: true,
+          verified: false,
+          pending: true,
+        },
+        { status: 200 },
+      );
+    }
+
+    /*
+     * Invalid/unverified sale:
+     * do not unlock.
+     *
+     * We still return pending for normal eventual-consistency
+     * cases unless the sale clearly contradicts the audit.
+     */
+    if (!verification.ok) {
+      return NextResponse.json(
+        {
+          success: true,
+          ok: true,
+          verified: false,
+          pending: true,
+        },
+        { status: 200 },
+      );
+    }
+
+    /*
+     * Gumroad must confirm this sale belongs
+     * to the same audit ID.
+     */
+    if (
+      !verification.auditId ||
+      verification.auditId !== auditId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          verified: false,
+          error: "audit_mismatch",
+        },
+        { status: 403 },
+      );
+    }
+
+    const sale =
+      verification.sale;
+
+    /*
+     * Optional email binding for extra safety.
+     */
+    const auditEmail =
+      normalizeEmail(audit.email);
+
+    const saleEmail =
+      normalizeEmail(
+        sale?.email ??
+          sale?.purchase_email,
+      );
+
+    if (
+      auditEmail &&
+      saleEmail &&
+      auditEmail !== saleEmail
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          verified: false,
+          error: "email_mismatch",
+        },
+        { status: 403 },
+      );
+    }
+
+    const now =
+      new Date().toISOString();
+
+    const verifiedSaleId = String(
+      sale?.id ??
+        sale?.sale_id ??
+        saleId,
+    );
+
+    /*
+     * IMPORTANT:
+     * Payment verification is payment state.
+     * Preserve it explicitly.
+     */
+    const { data: updatedAudit, error: updateError } =
+      await supabaseAdmin
+        .from("audits")
+        .update({
+          is_paid: true,
+          gumroad_sale_id:
+            verifiedSaleId,
+          status:
+            "payment_verified",
+          payment_verified_at: now,
+          updated_at: now,
+        })
+        .eq("id", auditId)
+        .select(
+          `
+          id,
+          status,
+          is_paid,
+          gumroad_sale_id,
+          payment_verified_at,
+          findings
+        `,
+        )
+        .single();
+
+    if (updateError || !updatedAudit) {
+      console.error(
+        "[Verify Session] Supabase update error",
+        updateError?.message,
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          ok: false,
+          error: "payment_update_failed",
+        },
+        { status: 503 },
+      );
+    }
+
+    console.log(
+      `[Verify Session] PAYMENT VERIFIED audit=${auditId} sale=${verifiedSaleId}`,
+    );
+
+    return NextResponse.json(
+      {
+        success: true,
+        ok: true,
+        verified: true,
         is_paid: true,
-        gumroad_sale_id: sale_id || audit.gumroad_sale_id,
-        status: isMissingDeepAudit ? 'payment_verified' : 'ready',
-        payment_verified_at: new Date().toISOString()
-      })
-      .eq('id', audit_id);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    if (isMissingDeepAudit) {
-      const { processAudit } = await import('@/lib/audits/processor');
-      const { waitUntil } = await import('@vercel/functions');
-      waitUntil((async () => {
-        try {
-          await processAudit(audit_id);
-        } catch (err) {
-          console.error('[Verify Session] Deep audit generation failed', err);
-        }
-      })());
-      return NextResponse.json({ success: true, processing: true, is_paid: true });
-    }
-
-    return NextResponse.json({ success: true, redirect_url: `/results/${audit_id}?paid=true`, is_paid: true });
-
+        source: "gumroad",
+        redirect_url:
+          `/results/${auditId}?paid=true`,
+        audit: {
+          id: updatedAudit.id,
+          status:
+            updatedAudit.status,
+          is_paid:
+            updatedAudit.is_paid,
+          payment_verified_at:
+            updatedAudit.payment_verified_at,
+        },
+      },
+      { status: 200 },
+    );
   } catch (error) {
-    console.error('[Verify Session Error]', error);
-    return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 });
+    console.error(
+      "[Verify Session Error]",
+      error instanceof Error
+        ? error.message
+        : error,
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        ok: false,
+        error: "internal_error",
+      },
+      { status: 500 },
+    );
   }
 }
