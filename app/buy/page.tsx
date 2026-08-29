@@ -10,14 +10,17 @@ export default async function Buy({ searchParams }: { searchParams: Promise<{ au
         <p className="font-mono text-4xl font-bold">$19</p>
         <p className="mt-2 text-sm text-primary-foreground/70">One-time purchase</p>
         <ul className="mt-8 space-y-3 text-sm">
-          <li>20–30 commercial-intent queries</li>
-          <li>Detailed competitor comparison</li>
-          <li>Query-level evidence and website signals</li>
-          <li>Prioritized recommendations and 30-day action plan</li>
-          <li>Professional PDF report with email delivery</li>
+<li>Full ChatGPT visibility breakdown</li>
+          <li>Full Gemini visibility breakdown</li>
+          <li>Full Perplexity visibility breakdown</li>
+          <li>Full Google AI visibility breakdown</li>
+          <li>Complete buyer-search analysis</li>
+          <li>Competitor evidence</li>
+          <li>Personalized fix plan</li>
+          <li>Instant PDF report download & web access</li>
         </ul>
         <PurchaseForm auditId={params.auditId} />
-        <p className="mt-4 text-xs text-primary-foreground/60">Checkout uses the configured Gumroad product. Report access is granted only after server-side sale verification.</p>
+        <p className="mt-4 text-xs text-primary-foreground/60">Your report is generated and accessible instantly on-screen upon payment completion.</p>
       </div>
       <div className="mt-8">
         <CTA href="/check" variant="secondary">Not ready? Start free instead</CTA>

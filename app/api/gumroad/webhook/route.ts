@@ -146,7 +146,7 @@ export async function POST(request: Request) {
       gumroad_email: gumroadEmail,
       is_paid: true,
       payment_verified_at: now,
-      status: 'payment_verified',
+      status: 'ready',
       updated_at: now,
     }).eq('id', auditId).in('status', ['queued', 'payment_verified', 'processing', 'ready'])
     if (error) return NextResponse.json({ error: 'Payment fulfillment failed.' }, { status: 500 })
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
         await processAudit(auditId)
       } catch (processingError) {
         console.error('[v0] paid audit processing failed after payment verification', processingError instanceof Error ? processingError.message : 'unknown')
-        await supabaseAdmin.from('audits').update({ status: 'payment_verified', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
+        await supabaseAdmin.from('audits').update({ status: 'ready', updated_at: new Date().toISOString() }).eq('id', auditId).eq('status', 'processing')
       }
     })())
     return NextResponse.json({ received: true, processing_started: true }, { status: 200 })

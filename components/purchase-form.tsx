@@ -48,7 +48,7 @@ export function PurchaseForm({ auditId }: { auditId?: string }) {
 
   return (
     <form onSubmit={submit} className="mt-8 space-y-3">
-        <input name="email" required type="email" placeholder="Report delivery email" className="w-full rounded-2xl border border-primary-foreground/20 bg-primary-foreground/10 px-4 py-3 text-sm text-primary-foreground outline-none placeholder:text-primary-foreground/55 focus:border-accent" />
+        <input name="email" required type="email" placeholder="Your email address" className="w-full rounded-2xl border border-primary-foreground/20 bg-primary-foreground/10 px-4 py-3 text-sm text-primary-foreground outline-none placeholder:text-primary-foreground/55 focus:border-accent" />
         {error ? <p role="alert" className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-primary-foreground">{error}</p> : null}
         <button type="submit" disabled={loading} className="w-full rounded-full bg-accent px-6 py-3.5 text-sm font-semibold text-accent-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60">
         {loading ? 'Preparing secure checkout…' : 'Continue to secure checkout'}
