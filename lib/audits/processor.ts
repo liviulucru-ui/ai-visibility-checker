@@ -32,11 +32,18 @@ const paidSchema = z.object({
   visibility_score: z.number().min(0).max(100),
   presence_level: z.enum(["High", "Medium", "Low", "Not Found", "Absent", "Weak", "Moderate"]),
   executive_summary: z.string(),
+  executive_roi_summary: z.string().optional(),
   engine_readiness: z.object({
     chatgpt_search: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
     perplexity_ai: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
     google_ai_overview: z.object({ score: z.number(), status: z.string(), analysis: z.string() })
   }),
+  commercial_queries_simulation: z.array(
+    z.object({
+      query: z.string(),
+      why_competitors_win: z.string()
+    })
+  ).optional(),
   in_depth_competitors: z.array(
     z.object({
       name: z.string(),
@@ -51,6 +58,7 @@ const paidSchema = z.object({
     entity_disambiguation: z.string(),
     sentiment_and_mentions: z.string()
   }),
+  ready_to_use_schema: z.string().optional(),
   action_plan_30_days: z.array(
     z.object({
       day_range: z.string(),
@@ -176,11 +184,18 @@ Do not invent information. Follow this JSON schema exactly without markdown form
   "visibility_score": number (0-100),
   "presence_level": "High" | "Medium" | "Low" | "Not Found" | "Absent" | "Weak" | "Moderate",
   "executive_summary": string (2-3 paragraphs),
+  "executive_roi_summary": string (Clear executive breakdown on potential client capture and estimated effort for each 30-day milestone),
   "engine_readiness": {
     "chatgpt_search": { "score": number, "status": string, "analysis": string },
     "perplexity_ai": { "score": number, "status": string, "analysis": string },
     "google_ai_overview": { "score": number, "status": string, "analysis": string }
   },
+  "commercial_queries_simulation": [
+    {
+      "query": string (Specific high-intent search query that buyers ask AI),
+      "why_competitors_win": string (Why competitors are currently winning this query)
+    }
+  ],
   "in_depth_competitors": [
     {
       "name": string,
@@ -195,6 +210,7 @@ Do not invent information. Follow this JSON schema exactly without markdown form
     "entity_disambiguation": string,
     "sentiment_and_mentions": string
   },
+  "ready_to_use_schema": string (Pre-generate valid JSON-LD Organization markup tailored to the client's business name, URL, and category),
   "action_plan_30_days": [
     {
       "day_range": string,

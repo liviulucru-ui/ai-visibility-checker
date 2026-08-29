@@ -11,9 +11,11 @@ type Interpretation = {
   visibility_score: number;
   presence_level?: "High" | "Medium" | "Low" | "Not Found" | "Absent" | "Weak" | "Moderate";
   executive_summary?: string;
+  executive_roi_summary?: string;
   summary?: string;
   brand_presence?: "High" | "Medium" | "Low" | "Not Found";
   top_competitors?: Array<{ name: string; domain: string; strengths: string }>;
+  commercial_queries_simulation?: Array<{ query: string; why_competitors_win: string }>;
   ai_readiness_breakdown?: { chatgpt_visibility: string; perplexity_search_rank: string; google_gemini_presence: string };
   actionable_recommendations?: Array<{ priority: "High" | "Medium"; action: string; impact: string }>;
   engine_readiness?: {
@@ -23,6 +25,7 @@ type Interpretation = {
   };
   in_depth_competitors?: Array<{ name: string; domain: string; visibility_score: number; why_ai_recommends_them: string; content_gaps: string }>;
   technical_ai_signals?: { schema_markup: string; entity_disambiguation: string; sentiment_and_mentions: string };
+  ready_to_use_schema?: string;
   action_plan_30_days?: Array<{ day_range: string; priority: "High" | "Medium" | "Low"; action: string; description: string }>;
 }
 type Audit = { is_paid?: boolean | null; gumroad_sale_id?: string | null; payment_verified_at?: string | null; status: string; score: number | null; findings?: { queries_analyzed?: number; query_results?: FindingQuery[]; raw_search_evidence?: FindingQuery[]; note?: string; ai_interpretation?: Interpretation | null; ai_interpretation_status?: 'available' | 'unavailable'; deterministic_score_inputs?: { valid_queries: number; mentions_weight: number; top_result_weight: number; citations_weight: number } } }
@@ -157,6 +160,28 @@ export default function ResultsPage() {
         </div>
       ) : (
         <>
+
+          {interpretation.executive_roi_summary && (
+            <section className="rounded-3xl border border-border bg-card p-6">
+              <h3 className="font-semibold mb-4">Executive ROI Summary</h3>
+              <p className="text-sm leading-7 text-muted-foreground">{interpretation.executive_roi_summary}</p>
+            </section>
+          )}
+
+          {interpretation.commercial_queries_simulation && interpretation.commercial_queries_simulation.length > 0 && (
+            <section className="rounded-3xl border border-border bg-card p-6">
+              <h3 className="font-semibold mb-4">Commercial Queries Simulation</h3>
+              <div className="space-y-4">
+                {interpretation.commercial_queries_simulation.map((sim, i) => (
+                  <div key={i} className="p-4 rounded-2xl bg-muted/30 border border-muted">
+                    <p className="font-mono text-sm font-semibold mb-2">"{sim.query}"</p>
+                    <p className="text-sm text-muted-foreground leading-6"><span className="font-medium text-foreground">Why Competitors Win:</span> {sim.why_competitors_win}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {engineBreakdown && (
             <section className="rounded-3xl border border-border bg-card p-6">
               <h3 className="font-semibold mb-4">Engine Breakdown Grid</h3>
@@ -203,6 +228,17 @@ export default function ResultsPage() {
                   <p className="text-sm leading-6">{interpretation.technical_ai_signals.sentiment_and_mentions}</p>
                 </div>
               </div>
+            </section>
+          )}
+
+
+          {interpretation.ready_to_use_schema && (
+            <section className="rounded-3xl border border-border bg-card p-6">
+              <h3 className="font-semibold mb-4">Ready-to-Use Schema Markup</h3>
+              <p className="text-xs text-muted-foreground mb-4">Inject this JSON-LD script into your website's &lt;head&gt; to improve entity recognition.</p>
+              <pre className="p-4 rounded-xl bg-primary text-primary-foreground text-xs overflow-x-auto font-mono whitespace-pre-wrap">
+                {interpretation.ready_to_use_schema}
+              </pre>
             </section>
           )}
 

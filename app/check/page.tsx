@@ -33,6 +33,6 @@ export default function Check() {
       {state === 'processing' && <div aria-live="polite" className="mt-5 border-t border-border pt-4 text-sm text-muted-foreground">{stages[stage]}</div>}
       {state === 'failed' && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
     </form>
-    <div className="mt-8"><CTA href="/buy" variant="secondary">Prefer the full report? Get it for $19</CTA></div>
+    <p className="mt-6 text-sm text-muted-foreground text-center max-w-xl">Free initial audit • No credit card required (Full Deep Audit with 30-Day Plan available for $19 after free baseline check)</p>
   </ContentPage>
 }
