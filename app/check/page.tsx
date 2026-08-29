@@ -20,7 +20,7 @@ export default function Check() {
       const response = await fetch('/api/audits', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const data = await response.json(); window.clearInterval(interval)
       if (!response.ok) throw new Error(data.error || 'The audit could not be completed.')
-      window.location.assign(`/results/${data.auditId}?token=${encodeURIComponent(data.accessToken)}`)
+      window.location.assign(`/results/${data.audit?.id || data.auditId}?token=${encodeURIComponent(data.accessToken)}`)
     } catch (submissionError) { window.clearInterval(interval); setState('failed'); setError(submissionError instanceof Error ? submissionError.message : 'The audit could not be completed.') }
   }
 
