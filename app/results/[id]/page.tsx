@@ -67,7 +67,7 @@ export default function ResultsPage() {
 
 
   const isPaid = Boolean(audit?.is_paid || audit?.gumroad_sale_id || audit?.payment_verified_at || audit?.status === 'payment_verified' || searchParams.get('paid') === 'true')
-  const isUpgrading = isPaid && audit?.findings?.ai_interpretation && !('engine_readiness' in audit.findings.ai_interpretation) && !('in_depth_competitors' in audit.findings.ai_interpretation)
+  const isUpgrading = false
 
   if (error) return <ContentPage eyebrow="Audit failed" title="We could not load this audit." intro={error}><CTA href="/check">Try another audit</CTA></ContentPage>
   if (!audit || audit.status === 'processing' || audit.status === 'queued' || isUpgrading) return <ContentPage eyebrow="Audit in progress" title={isUpgrading ? "Upgrading to deep audit..." : "Preparing your audit..."} intro="Generating relevant searches, checking search visibility, analyzing competitors, and preparing your results. This page will update automatically." />

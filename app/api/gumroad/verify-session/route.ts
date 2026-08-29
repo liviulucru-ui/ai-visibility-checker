@@ -102,7 +102,7 @@ export async function POST(req: Request) {
             .update({
                 is_paid: true,
                 gumroad_sale_id: saleId || audit.gumroad_sale_id,
-                status: isMissingDeepAudit ? 'payment_verified' : 'ready',
+                status: 'ready',
                 payment_verified_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             })
