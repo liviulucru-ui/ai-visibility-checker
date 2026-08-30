@@ -6,67 +6,110 @@ import { z } from 'zod'
 const freeSchema = z.object({
   visibility_score: z.number().min(0).max(100),
   summary: z.string(),
-  brand_presence: z.enum(["High", "Medium", "Low", "Not Found"]),
+  brand_presence: z.enum(["Strong", "Moderate", "Low", "Missing"]).optional(),
+  sample_evidence: z.array(
+    z.object({
+      query: z.string(),
+      competitor_win: z.string().optional(),
+      status: z.enum(["You Appear", "Competitor Wins", "Missing", "Partial"]).optional()
+    })
+  ).optional(),
   top_competitors: z.array(
     z.object({
       name: z.string(),
-      domain: z.string(),
-      strengths: z.string()
+      domain: z.string().optional(),
+      winning_search: z.string().optional(),
+      advantage: z.string().optional()
     })
-  ),
-  ai_readiness_breakdown: z.object({
-    chatgpt_visibility: z.string(),
-    perplexity_search_rank: z.string(),
-    google_gemini_presence: z.string()
-  }),
-  actionable_recommendations: z.array(
-    z.object({
-      priority: z.enum(["High", "Medium"]),
-      action: z.string(),
-      impact: z.string()
-    })
-  )
+  ).optional()
 })
 
 const paidSchema = z.object({
-  visibility_score: z.number().min(0).max(100),
-  presence_level: z.enum(["High", "Medium", "Low", "Not Found", "Absent", "Weak", "Moderate"]),
+  overall_score: z.number().min(0).max(100),
+  visibility_signals: z.object({
+    brand_discoverability: z.object({
+      level: z.enum(["Strong", "Moderate", "Low", "Missing"]),
+      score: z.number().optional(),
+      explanation: z.string()
+    }).optional(),
+    commercial_search_presence: z.object({
+      level: z.enum(["Strong", "Moderate", "Low", "Missing"]),
+      score: z.number().optional(),
+      explanation: z.string()
+    }).optional(),
+    competitive_strength: z.object({
+      level: z.enum(["Strong", "Moderate", "Low", "Missing"]),
+      score: z.number().optional(),
+      explanation: z.string()
+    }).optional(),
+    source_authority: z.object({
+      level: z.enum(["Strong", "Moderate", "Low", "Missing"]),
+      score: z.number().optional(),
+      explanation: z.string()
+    }).optional()
+  }).optional(),
   executive_summary: z.string(),
-  executive_roi_summary: z.string().optional(),
-  engine_readiness: z.object({
-    chatgpt_search: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
-    perplexity_ai: z.object({ score: z.number(), status: z.string(), analysis: z.string() }),
-    google_ai_overview: z.object({ score: z.number(), status: z.string(), analysis: z.string() })
-  }),
-  commercial_queries_simulation: z.array(
+  evidence_items: z.array(
     z.object({
       query: z.string(),
-      why_competitors_win: z.string()
+      intent: z.string().optional(),
+      engine: z.string().optional(),
+      brand_status: z.enum(["Found", "Missing", "Partial", "Competitor Wins"]).optional(),
+      your_status: z.enum(["Found", "Missing", "Partial", "Competitor Wins"]).optional(),
+      competitor_name: z.string().optional(),
+      winning_competitor: z.string().optional(),
+      competitor_domain: z.string().optional(),
+      source_domain: z.string().optional(),
+      source_url: z.string().optional(),
+      source: z.string().optional(),
+      result_summary: z.string().optional()
     })
   ).optional(),
-  in_depth_competitors: z.array(
+  competitors: z.array(
     z.object({
       name: z.string(),
-      domain: z.string(),
-      visibility_score: z.number(),
-      why_ai_recommends_them: z.string(),
-      content_gaps: z.string()
+      domain: z.string().optional(),
+      searches_detected: z.number().optional(),
+      strongest_query: z.string().optional(),
+      strongest_source: z.string().optional(),
+      advantage_summary: z.string().optional()
     })
-  ),
-  technical_ai_signals: z.object({
-    schema_markup: z.string(),
-    entity_disambiguation: z.string(),
-    sentiment_and_mentions: z.string()
-  }),
-  ready_to_use_schema: z.string().optional(),
-  action_plan_30_days: z.array(
+  ).optional(),
+  source_categories: z.array(
     z.object({
-      day_range: z.string(),
-      priority: z.enum(["High", "Medium", "Low"]),
-      action: z.string(),
-      description: z.string()
+      category: z.string(),
+      sources: z.array(z.string()),
+      competitor_count: z.number().optional(),
+      explanation: z.string().optional()
     })
-  )
+  ).optional(),
+  brand_signals: z.array(
+    z.object({
+      label: z.string(),
+      status: z.enum(["Good", "Needs Attention", "Missing"]),
+      explanation: z.string()
+    })
+  ).optional(),
+  visibility_gaps: z.array(
+    z.object({
+      title: z.string(),
+      explanation: z.string(),
+      evidence: z.string().optional()
+    })
+  ).optional(),
+  actions: z.array(
+    z.object({
+      timeframe: z.string().optional(),
+      priority: z.enum(["Critical", "High", "Medium", "Low"]),
+      action: z.string(),
+      why: z.string(),
+      steps: z.array(z.string()).optional(),
+      expected_improvement: z.string().optional(),
+      target_location: z.string().optional(),
+      expected_impact: z.string().optional()
+    })
+  ).optional(),
+  ready_to_use_schema: z.string().optional()
 })
 
 function adminClient() {
@@ -135,7 +178,7 @@ export async function processAudit(auditId: string) {
     const isPaid = Boolean(audit.is_paid || audit.gumroad_sale_id || audit.payment_verified_at)
 
     if (audit.status === 'ready' || audit.status === 'completed') {
-      if (!isPaid || (isPaid && audit.findings && audit.findings.ai_interpretation?.engine_readiness)) {
+      if (!isPaid || (isPaid && audit.findings && audit.findings.ai_interpretation?.visibility_signals)) {
         return { status: 'ready' as const, skipped: true }
       }
     }
@@ -197,59 +240,82 @@ Note: You are inferring AI engine visibility based on source/citation evidence p
 Do not invent information. Use actual data from the evidence. Infer AI engine presence based on the strength and volume of citations and organic rankings.
 Follow this JSON schema exactly without markdown formatting:
 {
-  "visibility_score": number (0-100),
-  "score_breakdown": {
-    "brand_presence": number,
-    "buyer_search_visibility": number,
-    "source_authority": number
+  "overall_score": number (0-100),
+  "visibility_signals": {
+    "brand_discoverability": {
+      "level": "Strong" | "Moderate" | "Low" | "Missing",
+      "score": number,
+      "explanation": string
+    },
+    "commercial_search_presence": {
+      "level": "Strong" | "Moderate" | "Low" | "Missing",
+      "score": number,
+      "explanation": string
+    },
+    "competitive_strength": {
+      "level": "Strong" | "Moderate" | "Low" | "Missing",
+      "score": number,
+      "explanation": string
+    },
+    "source_authority": {
+      "level": "Strong" | "Moderate" | "Low" | "Missing",
+      "score": number,
+      "explanation": string
+    }
   },
   "executive_summary": string (Concise strategic summary of overall visibility, strongest/weakest engine, and top fix),
-  "engine_visibility": [
-    {
-      "engine": "ChatGPT" | "Gemini" | "Perplexity" | "Google AI",
-      "status": "Strong" | "Moderate" | "Low" | "Missing",
-      "queries_checked": number,
-      "brand_wins": number,
-      "competitor_wins": number,
-      "strongest_competitor": string,
-      "summary": string,
-      "top_issue": string
-    }
-  ],
   "evidence_items": [
     {
       "query": string,
       "intent": string,
       "engine": string (Inferred engine),
-      "your_status": "Found" | "Missing" | "Partial" | "Competitor Wins",
-      "winning_competitor": string,
-      "source": string
+      "brand_status": "Found" | "Missing" | "Partial",
+      "competitor_name": string,
+      "competitor_domain": string,
+      "source_domain": string,
+      "source_url": string,
+      "result_summary": string
     }
   ],
-  "competitor_insights": [
+  "competitors": [
     {
       "name": string,
       "domain": string,
-      "winning_queries": [string],
-      "strongest_sources": [string],
+      "searches_detected": number,
+      "strongest_query": string,
+      "strongest_source": string,
       "advantage_summary": string
     }
   ],
-  "technical_signals": [
+  "source_categories": [
     {
-      "label": string (e.g., "Website indexed", "Organization schema", "Third-party mentions"),
-      "status": "Good" | "Needs Work" | "Missing",
+      "category": string,
+      "sources": [string],
+      "competitor_count": number,
       "explanation": string
     }
   ],
-  "action_tasks": [
+  "brand_signals": [
     {
-      "timeframe": string (e.g., "Week 1", "Week 2"),
-      "priority": "High" | "Medium" | "Low",
+      "label": string (e.g., "Official Website", "Dedicated Domain", "Structured Data", "Third-Party Mentions"),
+      "status": "Good" | "Needs Attention" | "Missing",
+      "explanation": string
+    }
+  ],
+  "visibility_gaps": [
+    {
+      "title": string,
+      "explanation": string,
+      "evidence": string
+    }
+  ],
+  "actions": [
+    {
+      "priority": "Critical" | "High" | "Medium" | "Low",
       "action": string (Specific instruction),
-      "target_location": string (Where to apply it),
       "why": string (How it affects AI discovery),
-      "expected_impact": string
+      "steps": [string] (2-4 practical steps),
+      "expected_improvement": string
     }
   ],
   "ready_to_use_schema": string (Pre-generate valid JSON-LD Organization markup tailored to the client's business name and domain)

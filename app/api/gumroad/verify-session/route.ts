@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     }
 
     if (verification.ok && verification.auditId === auditId) {
-        const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.engine_readiness);
+        const isMissingDeepAudit = (!audit.findings || !(audit.findings as any).ai_interpretation?.visibility_signals);
         const { error: updateError } = await supabaseAdmin
             .from('audits')
             .update({
