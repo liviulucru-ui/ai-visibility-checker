@@ -42,21 +42,15 @@ export function ReportPreview({ large = false }: { large?: boolean }) {
         <div><p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Visibility Score</p><p className="mt-1 text-sm font-medium">Needs attention</p></div>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <div className="rounded-xl bg-muted/50 p-3"><p className="text-muted-foreground mb-1 font-semibold">ChatGPT</p><p className="font-mono font-bold text-red-500">Low</p></div>
-        <div className="rounded-xl bg-muted/50 p-3"><p className="text-muted-foreground mb-1 font-semibold">Gemini</p><p className="font-mono font-bold text-yellow-600">Medium</p></div>
-        <div className="rounded-xl bg-muted/50 p-3"><p className="text-muted-foreground mb-1 font-semibold">Perplexity</p><p className="font-mono font-bold text-red-500">Low</p></div>
-        <div className="rounded-xl bg-muted/50 p-3"><p className="text-muted-foreground mb-1 font-semibold">Google AI</p><p className="font-mono font-bold text-yellow-600">Medium</p></div>
+        <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest mb-1">Competitors Detected</p><p className="font-mono font-bold text-lg">8</p></div>
+        <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest mb-1">Searches Analyzed</p><p className="font-mono font-bold text-lg">24</p></div>
       </div>
     </div>
 
     <div className="rounded-xl bg-muted p-4">
-      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Missed Buyer Search</p>
+      <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Top Visibility Gap</p>
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-background"><span className="font-semibold truncate pr-4">"best accounting software for startups"</span></div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-           <div className="p-2 rounded-lg bg-background border border-red-500/20"><p className="text-muted-foreground mb-1">Your Brand</p><p className="font-semibold text-red-600">Missing</p></div>
-           <div className="p-2 rounded-lg bg-background border border-green-500/20"><p className="text-muted-foreground mb-1">Competitor</p><p className="font-semibold text-green-600">Found</p></div>
-        </div>
+        <div className="flex items-center justify-between text-sm p-3 rounded-lg bg-background border border-red-500/20"><span className="font-semibold text-red-700">Weak visibility for category-level discovery</span></div>
       </div>
     </div>
     <p className="mt-4 text-center text-[11px] font-medium text-muted-foreground">Example data — not a real audit.</p>

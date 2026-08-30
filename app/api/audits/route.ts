@@ -44,26 +44,22 @@ function scoreAudit(queries: Array<{ results: Array<{ title?: string; link?: str
 const interpretationSchema = z.object({
   visibility_score: z.number().min(0).max(100),
   summary: z.string(),
-  brand_presence: z.enum(["High", "Medium", "Low", "Not Found"]),
+  brand_presence: z.enum(["Strong", "Moderate", "Low", "Missing"]).optional(),
+  sample_evidence: z.array(
+    z.object({
+      query: z.string(),
+      competitor_win: z.string().optional(),
+      status: z.enum(["You Appear", "Competitor Wins", "Missing", "Partial"]).optional()
+    })
+  ).optional(),
   top_competitors: z.array(
     z.object({
       name: z.string(),
-      domain: z.string(),
-      strengths: z.string()
+      domain: z.string().optional(),
+      winning_search: z.string().optional(),
+      advantage: z.string().optional()
     })
-  ),
-  ai_readiness_breakdown: z.object({
-    chatgpt_visibility: z.string(),
-    perplexity_search_rank: z.string(),
-    google_gemini_presence: z.string()
-  }),
-  actionable_recommendations: z.array(
-    z.object({
-      priority: z.enum(["High", "Medium"]),
-      action: z.string(),
-      impact: z.string()
-    })
-  )
+  ).optional()
 })
 
 type Interpretation = z.infer<typeof interpretationSchema>
@@ -135,22 +131,32 @@ async function interpretEvidence(evidence: unknown): Promise<Interpretation | nu
           model: createGoogleGenerativeAI({ apiKey: key })(modelName),
           temperature: 0.2,
 
-          prompt: `You are an expert SEO and AI visibility analyst. Review this search evidence and provide a structured JSON report.
+          prompt: `You are an expert AI visibility analyst. Review this search evidence and provide a structured JSON diagnostic report.
 Do not invent information. Follow this JSON schema exactly without markdown formatting:
 {
   "visibility_score": number (0-100),
-  "summary": string,
-  "brand_presence": "High" | "Medium" | "Low" | "Not Found",
-  "top_competitors": [{"name": string, "domain": string, "strengths": string}],
-  "ai_readiness_breakdown": {
-    "chatgpt_visibility": "Low" | "Medium" | "High",
-    "perplexity_search_rank": "Low" | "Medium" | "High",
-    "google_gemini_presence": "Low" | "Medium" | "High"
-  },
-  "actionable_recommendations": [{"priority": "High" | "Medium", "action": string, "impact": string}]
+  "summary": string (1-2 sentences),
+  "brand_presence": "Strong" | "Moderate" | "Low" | "Missing",
+  "sample_evidence": [
+    {
+      "query": string (A high-intent buyer query),
+      "competitor_win": string (Name of competitor appearing),
+      "status": "You Appear" | "Competitor Wins" | "Missing" | "Partial"
+    }
+  ],
+  "top_competitors": [
+    {
+      "name": string,
+      "domain": string,
+      "winning_search": string,
+      "advantage": string
+    }
+  ]
 }
+Note: You are inferring AI engine visibility based on source/citation evidence provided in the organic search results, as these engines heavily rely on top organic citations.
 
-EVIDENCE:\n${JSON.stringify({
+EVIDENCE:
+${JSON.stringify({
   ...evidence as any,
   query_results: extractCleanSearchData((evidence as any).query_results)
 })}`,
