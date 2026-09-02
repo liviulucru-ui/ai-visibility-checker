@@ -44,44 +44,68 @@ export default function ResultsPage() {
   const searchParams = useSearchParams()
   const [audit, setAudit] = useState<Audit | null>(null)
   const [error, setError] = useState('')
-
+  const [isVerifying, setIsVerifying] = useState(false)
 
   useEffect(() => {
     const token = searchParams.get('token')
     const paidParam = searchParams.get('paid') === 'true'
+    const saleId = searchParams.get('sale_id')
     let active = true
     let timer: number | undefined
 
-    // Proactively notify backend if we returned from Gumroad
-    if (paidParam && params.id) {
-      fetch('/api/gumroad/verify-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auditId: params.id })
-      }).catch(console.error)
+    const verifyAndPoll = async () => {
+      if (paidParam && params.id) {
+        setIsVerifying(true)
+        try {
+          const verifyRes = await fetch('/api/gumroad/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auditId: params.id, saleId: saleId })
+          })
+          const verifyData = await verifyRes.json()
+
+          if (!verifyData.success || !verifyData.verified) {
+            if (active) {
+              setError('We could not verify your payment session. Please check your Gumroad receipt or contact support.')
+              setIsVerifying(false)
+            }
+            return
+          }
+        } catch (err) {
+          if (active) {
+            setError('We could not verify your payment session. Please check your Gumroad receipt or contact support.')
+            setIsVerifying(false)
+          }
+          return
+        }
+        if (active) setIsVerifying(false)
+      }
+
+      const poll = async () => {
+        try {
+          const fetchUrl = token ? `/api/audits?id=${encodeURIComponent(params.id)}&token=${encodeURIComponent(token)}` : `/api/audits?id=${encodeURIComponent(params.id)}`
+          const response = await fetch(fetchUrl, { cache: 'no-store' })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.error || 'Results are unavailable.')
+          if (!active) return
+          setAudit(data)
+          if (data.status === 'processing' || data.status === 'queued') timer = window.setTimeout(poll, 2000)
+        } catch (pollError) { if (active) setError(pollError instanceof Error ? pollError.message : 'Results are unavailable.') }
+      }
+      poll()
     }
 
-    const poll = async () => {
+    verifyAndPoll()
 
-      try {
-        const fetchUrl = token ? `/api/audits?id=${encodeURIComponent(params.id)}&token=${encodeURIComponent(token)}` : `/api/audits?id=${encodeURIComponent(params.id)}`
-        const response = await fetch(fetchUrl, { cache: 'no-store' })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || 'Results are unavailable.')
-        if (!active) return
-        setAudit(data)
-        if (data.status === 'processing' || data.status === 'queued') timer = window.setTimeout(poll, 2000)
-      } catch (pollError) { if (active) setError(pollError instanceof Error ? pollError.message : 'Results are unavailable.') }
-    }
-    poll()
     return () => { active = false; if (timer) window.clearTimeout(timer) }
   }, [params.id, searchParams])
 
 
-  const isPaid = Boolean(audit?.is_paid || audit?.gumroad_sale_id || audit?.payment_verified_at || audit?.status === 'payment_verified' || searchParams.get('paid') === 'true')
+  const isPaid = Boolean(audit?.is_paid || audit?.status === 'payment_verified')
   const isUpgrading = false
 
   if (error) return <ContentPage eyebrow="Audit failed" title="We could not load this audit." intro={error}><CTA href="/check">Try another audit</CTA></ContentPage>
+  if (isVerifying) return <ContentPage eyebrow="Verifying payment" title="Verifying your payment..." intro="Please wait while we confirm your transaction." />
   if (!audit || audit.status === 'processing' || audit.status === 'queued' || isUpgrading) return <ContentPage eyebrow="Audit in progress" title={isUpgrading ? "Upgrading to deep audit..." : "Preparing your audit..."} intro="Generating relevant searches, checking search visibility, analyzing competitors, and preparing your results. This page will update automatically." />
   if (audit.status === 'failed') return <ContentPage eyebrow="Audit failed" title="The audit could not be completed." intro="No results were generated. Check the configuration and try again."><CTA href="/check">Try another audit</CTA></ContentPage>
 
@@ -115,9 +139,21 @@ export default function ResultsPage() {
 
 const competitors = interpretation.competitors || interpretation.in_depth_competitors || interpretation.top_competitors || []
 
-const actionPlan = interpretation.actions || interpretation.action_plan_30_days || (interpretation.actionable_recommendations ? interpretation.actionable_recommendations.map(r => ({
-    day_range: 'Ongoing', priority: r.priority, action: r.action, description: r.impact
-  })) : [])
+const actionPlan =
+  (Array.isArray(interpretation.actions) && interpretation.actions.length > 0
+    ? interpretation.actions
+    : null) ||
+  (Array.isArray(interpretation.action_plan_30_days) && interpretation.action_plan_30_days.length > 0
+    ? interpretation.action_plan_30_days
+    : null) ||
+  (Array.isArray(interpretation.actionable_recommendations) && interpretation.actionable_recommendations.length > 0
+    ? interpretation.actionable_recommendations.map(r => ({
+        day_range: 'Ongoing',
+        priority: r.priority || 'Medium',
+        action: r.action,
+        description: r.why || r.impact || ''
+      }))
+    : [])
 
 
   const engineSnapshot = interpretation.engine_snapshot || {
