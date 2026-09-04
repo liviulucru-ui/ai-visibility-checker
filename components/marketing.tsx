@@ -29,7 +29,7 @@ export function SiteNav() {
 }
 
 export function CTA({ children = 'Check My AI Visibility — Free', href = '/check', variant = 'primary' }: { children?: React.ReactNode; href?: string; variant?: 'primary' | 'secondary' }) {
-  return <Link href={href} className={`inline-flex items-center justify-center gap-2 rounded-full transition-all duration-300 hover:-translate-y-0.5 ${variant === 'primary' ? 'bg-white text-black font-semibold px-6 py-3.5 text-base sm:text-lg shadow-[0_0_20px_rgba(255,255,255,0.35)] hover:shadow-[0_0_25px_rgba(255,255,255,0.5)]' : 'px-6 py-3.5 text-sm font-semibold border border-border bg-card text-foreground'}`}>{children}<ArrowRight className="size-4" /></Link>
+  return <Link href={href} className={`inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold transition-transform hover:-translate-y-0.5 ${variant === 'primary' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-foreground'}`}>{children}<ArrowRight className="size-4" /></Link>
 }
 
 export function ReportPreview({ large = false }: { large?: boolean }) {
